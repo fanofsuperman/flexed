@@ -1,15 +1,15 @@
-loadstring(game: HttpGet("https://raw.githubusercontent.com/Pixeluted/adoniscries/main/Source.lua",true))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Pixeluted/adoniscries/main/Source.lua",true))()
 getgenv().Vepar = {
     ['Camlock'] = {
         ['Prediction'] = 0.1475,
         ['Prediction Method'] = {
             ['X'] = 0.19,
             ['Y'] = 0.19,
-            }
-        },
-        ['JumpCheck'] = {
-            ['Jump'] = -0.92,
-            ['Fall'] = -1.91,
+        }
+    },
+    ['JumpCheck'] = {
+        ['Jump'] = -0.92,
+        ['Fall'] = -1.91,
         ['Target Part'] = "HumanoidRootPart"
     },
     ['Silent'] = {
@@ -39,6 +39,7 @@ local AirshotMaterial = Jump -- Move, Around, Jumps, Nothing
 local JumpCheck = true
 local Jump = -0.92
 local Fall = -1.91
+
 -- Function to remove ESP chams
 local function removeCham(cham)
     if cham then
@@ -46,19 +47,30 @@ local function removeCham(cham)
     end
 end
 local currentCham
+
 function FindNearestEnemy()
     local ClosestDistance, ClosestPlayer = math.huge, nil
     local CenterPosition = Vector2.new(game:GetService("GuiService"):GetScreenResolution().X / 2, game:GetService("GuiService"):GetScreenResolution().Y / 2)
+    local camera = workspace.CurrentCamera
+    
     for _, Player in ipairs(game:GetService("Players"):GetPlayers()) do
         if Player ~= LocalPlayer then
             local Character = Player.Character
             if Character and Character:FindFirstChild("HumanoidRootPart") and Character.Humanoid.Health > 0 then
-                local Position, IsVisibleOnViewport = game:GetService("Workspace").CurrentCamera:WorldToViewportPoint(Character.HumanoidRootPart.Position)
+                local Position, IsVisibleOnViewport = camera:WorldToViewportPoint(Character.HumanoidRootPart.Position)
+                
                 if IsVisibleOnViewport then
-                    local Distance = (CenterPosition - Vector2.new(Position.X, Position.Y)).Magnitude
-                    if Distance < ClosestDistance then
-                        ClosestPlayer = Character.HumanoidRootPart
-                        ClosestDistance = Distance
+                    -- Raycast to check if actually visible (not through walls)
+                    local ray = Ray.new(camera.CFrame.Position, (Character.HumanoidRootPart.Position - camera.CFrame.Position).Unit * (camera.CFrame.Position - Character.HumanoidRootPart.Position).Magnitude)
+                    local part, hitPosition = workspace:FindPartOnRay(ray, LocalPlayer.Character, false, true)
+                    
+                    -- If we hit the target's character or nothing (no wall), it's visible
+                    if part == nil or part:IsDescendantOf(Character) then
+                        local Distance = (CenterPosition - Vector2.new(Position.X, Position.Y)).Magnitude
+                        if Distance < ClosestDistance then
+                            ClosestPlayer = Character.HumanoidRootPart
+                            ClosestDistance = Distance
+                        end
                     end
                 end
             end
@@ -66,10 +78,13 @@ function FindNearestEnemy()
     end
     return ClosestPlayer
 end
+
 local enemy = nil
+local noTargetFound = false
+
 -- Function to aim the camera at the nearest enemy's HumanoidRootPart
 RunService.Heartbeat:Connect(function()
-    if CamlockState == true then
+    if CamlockState == true and not noTargetFound then
         if enemy then
             local camera = workspace.CurrentCamera
             local targetCFrame = CFrame.new(camera.CFrame.p, enemy.Position + enemy.Velocity * Prediction)
@@ -81,6 +96,25 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
+
+-- Update enemy target every frame to ensure only visible targets
+RunService.RenderStepped:Connect(function()
+    if CamlockState and not noTargetFound then
+        local newEnemy = FindNearestEnemy()
+        if newEnemy then
+            enemy = newEnemy
+        else
+            -- No target found, set flag to stop tracking and require restart
+            noTargetFound = true
+            enemy = nil
+            -- Keep button text normal
+            if TextButton then
+                TextButton.Text = "MIST ON"
+            end
+        end
+    end
+end)
+
 local Wowo = Instance.new("ScreenGui")
 Wowo.Name = "Wowo"
 Wowo.Parent = game.CoreGui
@@ -123,17 +157,23 @@ TextButton.MouseButton1Click:Connect(function()
         TextButton.Text = "MIST ON"
         getgenv().SilentAimEnabled = true
         CamlockState = true
+        noTargetFound = false -- Reset no target flag
         enemy = FindNearestEnemy()
         if enemy then
             Air.Parent = true
             enabled = true
             Plr = LockToPlayer()
+        else
+            -- If no target found immediately, set flag
+            noTargetFound = true
+            TextButton.Text = "MIST ON"
         end
     else
         TextButton.Text = "MIST OFF"
         getgenv().SilentAimEnabled = false
         CamlockState = false
         enabled = false
+        noTargetFound = false
         if AutoAir then
             AirMaterial(Material.Auto.Air)
             Airshot = nil
@@ -150,7 +190,7 @@ local autoAirFrame = Instance.new("Frame")
 autoAirFrame.Parent = autoAirGui
 autoAirFrame.BackgroundColor3 = Color3.new(0, 0, 0)
 autoAirFrame.BackgroundTransparency = 0.35
-autoAirFrame.Position = UDim2.new(0.0, 0, 0, 50) -- Adjust position as needed
+autoAirFrame.Position = UDim2.new(0.0, 0, 0, 50)
 autoAirFrame.Size = UDim2.new(0.1, 0, 0.2, 0)
 autoAirFrame.Active = true
 autoAirFrame.Draggable = true
@@ -185,20 +225,20 @@ local function IsPlayerAirborne(humanoid)
             Enum.HumanoidStateType.Climbing,
             Enum.HumanoidStateType.Swimming
         }
-
         local isAirborne = math.abs(velocityY) > 2
         local isGrounded = table.find(groundedStates, humanoid:GetState()) ~= nil
-
         return isAirborne and not isGrounded
     end
     return false
 end
 
-local function AutoAir()
-    if AutoAirState and CamlockState and enemy then
-        local enemyHumanoid = enemy.Parent and enemy.Parent:FindFirstChild("Humanoid")
-        local tool = LocalPlayer.Character:FindFirstChildOfClass("Tool")
+local AutoAirState = false
+local toolActivated = false
 
+local function AutoAir()
+    if AutoAirState and CamlockState and enemy and not noTargetFound then
+        local enemyHumanoid = enemy.Parent and enemy.Parent:FindFirstChild("Humanoid")
+        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
         if enemyHumanoid and tool then
             if IsPlayerAirborne(enemyHumanoid) and not toolActivated then
                 wait(0.1)
@@ -222,19 +262,21 @@ autoAirButton.MouseButton1Click:Connect(function()
     end
 end)
 
-    autoAirGui.Parent = game.CoreGui
+autoAirGui.Parent = game.CoreGui
 
 local cornerUI = Instance.new("UICorner")
 cornerUI.CornerRadius = UDim.new(0, 5)
 cornerUI.Parent = TextButton
+
 getgenv().HitPart = "HumanoidRootPart"
 getgenv().Prediction_SilentAim = 0.1201
-getgenv().SilentAimEnabled = false  -- Default to disabled
-getgenv().SilentAimShowFOV = false  -- Default to showing FOV
+getgenv().SilentAimEnabled = false -- Default to disabled
+getgenv().SilentAimShowFOV = false -- Default to showing FOV
 getgenv().SilentAimFOVSize = 90
 getgenv().SilentAimFOVTransparency = 1
 getgenv().SilentAimFOVThickness = 2.0
 getgenv().SilentAimFOVColor = Color3.new(255, 0, 0)
+
 local SilentAimFOVCircle = Drawing.new("Circle")
 SilentAimFOVCircle.Color = getgenv().SilentAimFOVColor
 SilentAimFOVCircle.Visible = getgenv().SilentAimShowFOV
@@ -242,27 +284,35 @@ SilentAimFOVCircle.Filled = false
 SilentAimFOVCircle.Radius = getgenv().SilentAimFOVSize
 SilentAimFOVCircle.Transparency = getgenv().SilentAimFOVTransparency
 SilentAimFOVCircle.Thickness = getgenv().SilentAimFOVThickness
+
 local function updateFOVCirclePosition()
     local centerScreenPosition = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y / 2)
     SilentAimFOVCircle.Position = centerScreenPosition
 end
+
 local function getClosestPlayerToCenter()
     local centerScreenPosition = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y / 2)
     local closestPlayer
     local closestDistance = math.huge
     local localPlayer = game.Players.LocalPlayer
     local camera = workspace.CurrentCamera
+    
     for _, player in ipairs(game.Players:GetPlayers()) do
         if player ~= localPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
             local playerRootPart = player.Character.HumanoidRootPart
             local screenPosition, onScreen = camera:WorldToViewportPoint(playerRootPart.Position)
+            
             if onScreen then
                 local KOd = player.Character:FindFirstChild("BodyEffects") and player.Character.BodyEffects["K.O"].Value
                 local Grabbed = player.Character:FindFirstChild("GRABBING_CONSTRAINT") ~= nil
+                
                 if not KOd and not Grabbed then
-                    local ray = Ray.new(camera.CFrame.Position, playerRootPart.Position - camera.CFrame.Position)
-                    local part, position = workspace:FindPartOnRay(ray, localPlayer.Character, false, true)
-                    if part and part:IsDescendantOf(player.Character) then
+                    -- Raycast to check visibility
+                    local ray = Ray.new(camera.CFrame.Position, (playerRootPart.Position - camera.CFrame.Position).Unit * (camera.CFrame.Position - playerRootPart.Position).Magnitude)
+                    local part, hitPosition = workspace:FindPartOnRay(ray, localPlayer.Character, false, true)
+                    
+                    -- Only target if visible (no wall in between)
+                    if part == nil or part:IsDescendantOf(player.Character) then
                         local distance = (centerScreenPosition - Vector2.new(screenPosition.X, screenPosition.Y)).Magnitude
                         if distance < closestDistance and distance <= SilentAimFOVCircle.Radius then
                             closestPlayer = player
@@ -275,28 +325,36 @@ local function getClosestPlayerToCenter()
     end
     return closestPlayer
 end
+
 local SilentAimTarget = nil
+
 game:GetService("RunService").RenderStepped:Connect(function()
     SilentAimTarget = getClosestPlayerToCenter()
 end)
+
 game:GetService("RunService").RenderStepped:Connect(function()
     updateFOVCirclePosition()
 end)
+
 local mt = getrawmetatable(game)
 local old = mt.__namecall
 setreadonly(mt, false)
+
 mt.__namecall = newcclosure(function(...)
     local args = {...}
     if getgenv().SilentAimEnabled and SilentAimTarget ~= nil and SilentAimTarget.Character and getnamecallmethod() == "FireServer" and args[2] == "UpdateMousePos" then
-    args[3] = SilentAimTarget.Character[getgenv().HitPart].Position + (SilentAimTarget.Character[getgenv().HitPart].Velocity * getgenv().Prediction_SilentAim)
+        args[3] = SilentAimTarget.Character[getgenv().HitPart].Position + (SilentAimTarget.Character[getgenv().HitPart].Velocity * getgenv().Prediction_SilentAim)
         return old(unpack(args))
     end
     return old(...)
 end)
+
 setreadonly(mt, true)
+
 local mt = getrawmetatable(game)
 local old = mt.__namecall
 setreadonly(mt, false)
+
 mt.__namecall = newcclosure(function(...)
     local args = {...}
     if getgenv().SilentAimEnabled and SilentAimTarget ~= nil and SilentAimTarget.Character and getnamecallmethod() == "FireServer" then
@@ -307,7 +365,9 @@ mt.__namecall = newcclosure(function(...)
     end
     return old(...)
 end)
+
 setreadonly(mt, true)
+
 -- expand hitbox by xr/pamcles/airhitpart
 local function randomizeHitbox(player)
     local character = player.Character
