@@ -45,32 +45,102 @@ o = hookfunction( getrenv().debug.info, newcclosure( function(...)
 end ) ) 
 setthreadidentity(7)
 
-getgenv().Vepar = {
-    ['Camlock'] = {
-        ['Prediction'] = 0.1475,
-        ['Prediction Method'] = {
-            ['X'] = 0.19,
-            ['Y'] = 0.19,
+-- SINGLE CONFIGURATION OBJECT - ALL SETTINGS IN ONE PLACE
+getgenv().FlexedConfig = {
+    -- Vepar settings (original)
+    Vepar = {
+        Camlock = {
+            Prediction = 0.1475,
+            PredictionMethod = {
+                X = 0.19,
+                Y = 0.19,
+            }
+        },
+        JumpCheck = {
+            Jump = -0.92,
+            Fall = -1.91,
+            TargetPart = "HumanoidRootPart"
+        },
+        Silent = {
+            FOV = {
+                Enabled = true,
+                Prediction = 0.165,
+                AutoCheckJump = true,
+                AntiGroundShot = false,
+            },
+            AutoAir = {
+                AutoAir = true,
+                AirMaterial = "Jump",
+            }
         }
     },
-    ['JumpCheck'] = {
-        ['Jump'] = -0.92,
-        ['Fall'] = -1.91,
-        ['Target Part'] = "HumanoidRootPart"
-    },
-    ['Silent'] = {
-        ['FOV'] = {
-            ['Enabled'] = true,
-            ['Prediction'] = 0.124,
-            ['AutoCheckJump'] = true,
-            ['AntiGroundShot'] = false,
+    
+    -- Main Da Hood settings
+    DaHood = {
+        SilentAim = false,
+        WallCheck = false,
+        FOV = 100,
+        Camlock = {
+            Enabled = false,
+            TargetPart = "Head",
+            Prediction = 0.1475,
+            Smoothness = 0.405,
+            SmoothEnabled = true
         },
-        ['AutoAir'] = {
-            ['AutoAir'] = true,
-            ['AirMaterial'] = "Jump",
+        Aimlock = {
+            Enabled = false,
+            TargetPart = "Head",
+            Prediction = 0.188259,
+            Horizontal = 0.14664,
+            Vertical = 0.07,
+            X = 0.14664,
+            Y = 0.07
+        },
+        AutoAir = false,
+        TargetNPCs = false,
+        AutoShoot = false,
+        TriggerBot = {
+            Enabled = false,
+            Prediction = 0.09
+        },
+        Visuals = {
+            ShowChams = false,
+            ShowTracer = false,
+            ShowNameESP = false
+        }
+    },
+    
+    -- Blacklisted tools
+    BlacklistedTools = {
+        "Knife"
+    },
+    
+    -- UI Configuration
+    UI = {
+        Font = Enum.Font.Code,
+        BaseSize = Vector2.new(600, 450),
+        MenuKey = Enum.KeyCode.RightShift,
+        Colors = {
+            Main = Color3.fromRGB(14, 14, 14),
+            Secondary = Color3.fromRGB(26, 26, 26),
+            Accent = Color3.fromRGB(189, 172, 255),
+            Text = Color3.fromRGB(200, 200, 200),
+            TextDark = Color3.fromRGB(120, 120, 120),
+            Stroke = Color3.fromRGB(40, 40, 40)
         }
     }
 }
+
+-- Local reference to config for easier access
+local Config = getgenv().FlexedConfig
+
+-- Update prediction values from Vepar
+Config.DaHood.Camlock.Prediction = Config.Vepar.Camlock.Prediction
+Config.DaHood.Aimlock.Prediction = Config.Vepar.Camlock.Prediction
+Config.DaHood.Aimlock.Horizontal = Config.Vepar.Camlock.PredictionMethod.X
+Config.DaHood.Aimlock.Vertical = Config.Vepar.Camlock.PredictionMethod.Y
+Config.DaHood.Aimlock.X = Config.Vepar.Camlock.PredictionMethod.X
+Config.DaHood.Aimlock.Y = Config.Vepar.Camlock.PredictionMethod.Y
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -83,21 +153,21 @@ local Mouse = Player:GetMouse()
 local ViewportSize = workspace.CurrentCamera.ViewportSize
 
 local CFG = {
-    MainColor = Color3.fromRGB(14, 14, 14),
-    SecondaryColor = Color3.fromRGB(26, 26, 26),
-    AccentColor = Color3.fromRGB(189, 172, 255),
-    TextColor = Color3.fromRGB(200, 200, 200),
-    TextDark = Color3.fromRGB(120, 120, 120),
-    StrokeColor = Color3.fromRGB(40, 40, 40),
-    Font = Enum.Font.Code,
-    BaseSize = Vector2.new(600, 450)
+    MainColor = Config.UI.Colors.Main,
+    SecondaryColor = Config.UI.Colors.Secondary,
+    AccentColor = Config.UI.Colors.Accent,
+    TextColor = Config.UI.Colors.Text,
+    TextDark = Config.UI.Colors.TextDark,
+    StrokeColor = Config.UI.Colors.Stroke,
+    Font = Config.UI.Font,
+    BaseSize = Config.UI.BaseSize
 }
 
 local Library = {
     Flags = {},
     Connections = {},
     Unloaded = false,
-    MenuKey = Enum.KeyCode.RightShift
+    MenuKey = Config.UI.MenuKey
 }
 
 local function Create(class, props, children)
@@ -1039,59 +1109,32 @@ local LocalPlayer = Players.LocalPlayer
 local CurrentCamera = Workspace.CurrentCamera
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Prediction = 0.188259
-local HorizontalPrediction = 0.14664
-local VerticalPrediction = 0.07
-local XPrediction = 0.14664
-local YPrediction = 0.07
-
-local DaHoodSettings = {
-    SilentAim = false,
-    WallCheck = false,
-    FOV = 100,
-    CamlockEnabled = false,
-    AutoAir = false,
-    TargetNPCs = false,
-    AutoShoot = false,
-    TargetPart = "Head",
-    ShowChams = false,
-    ShowTracer = false,
-    ShowNameESP = false,
-    TriggerBotEnabled = false,
-    TriggerBotPrediction = 0.09,
-    CamlockPrediction = 0.1475,
-    SilentPrediction = 0.124,
-    JumpCheck = -0.92,
-    FallCheck = -1.91
-}
-
-DaHoodSettings.CamlockPrediction = getgenv().Vepar.Camlock.Prediction
-DaHoodSettings.SilentPrediction = getgenv().Vepar.Silent.FOV.Prediction
-DaHoodSettings.JumpCheck = getgenv().Vepar.JumpCheck.Jump
-DaHoodSettings.FallCheck = getgenv().Vepar.JumpCheck.Fall
+-- Use settings from Config
+local Prediction = Config.DaHood.Aimlock.Prediction
+local HorizontalPrediction = Config.DaHood.Aimlock.Horizontal
+local VerticalPrediction = Config.DaHood.Aimlock.Vertical
+local XPrediction = Config.DaHood.Aimlock.X
+local YPrediction = Config.DaHood.Aimlock.Y
 
 local Aimlock = {
     Enabled = false,
-    Prediction = 0.188259,
-    HorizontalPrediction = 0.14664,
-    VerticalPrediction = 0.07,
-    XPrediction = 0.14664,
-    YPrediction = 0.07,
+    TargetPart = Config.DaHood.Aimlock.TargetPart,
+    Prediction = Config.DaHood.Aimlock.Prediction,
+    HorizontalPrediction = Config.DaHood.Aimlock.Horizontal,
+    VerticalPrediction = Config.DaHood.Aimlock.Vertical,
+    XPrediction = Config.DaHood.Aimlock.X,
+    YPrediction = Config.DaHood.Aimlock.Y,
     CurrentTarget = nil,
     IsLocked = false,
     HasSearchedForTarget = false
 }
 
-local Aiming = {
-    FOV = 100,
-    CurrentTarget = nil,
-    Prediction = 0.1475,
-    HorizontalPrediction = 0.14664,
-    VerticalPrediction = 0.07,
-    XPrediction = 0.14664,
-    YPrediction = 0.07,
-    HasSearchedForTarget = false
-}
+local CamlockState = false
+local PredictionCamlock = Config.DaHood.Camlock.Prediction
+local Smoothness = Config.DaHood.Camlock.Smoothness
+local SmoothEnabled = Config.DaHood.Camlock.SmoothEnabled
+local CamlockTargetPart = Config.DaHood.Camlock.TargetPart
+local enemy = nil
 
 local Visuals = {
     ChamsEnabled = false,
@@ -1116,9 +1159,7 @@ local AutoShootCooldown = 0.1
 local TriggerBotLastActivation = 0
 local TriggerBotActivationDelay = 0.1
 
-local BlacklistedTools = {
-    "Knife"
-}
+local BlacklistedTools = Config.BlacklistedTools
 
 local function isCharacterAlive(character)
     if not character then return false end
@@ -1141,7 +1182,7 @@ local function isTargetValid(targetPart)
     if player then
         return isCharacterAlive(character) and targetPart:IsDescendantOf(Workspace)
     else
-        return DaHoodSettings.TargetNPCs and isCharacterAlive(character) and targetPart:IsDescendantOf(Workspace)
+        return Config.DaHood.TargetNPCs and isCharacterAlive(character) and targetPart:IsDescendantOf(Workspace)
     end
     return false
 end
@@ -1173,16 +1214,32 @@ local function findNPCBots()
     return npcs
 end
 
-local function getTargetPart(character)
+local function getTargetPart(character, mode)
     if not character then return nil end
-    local targetPart = character:FindFirstChild(DaHoodSettings.TargetPart)
+    local targetPartName
+    
+    if mode == "camlock" then
+        targetPartName = Config.DaHood.Camlock.TargetPart
+    elseif mode == "aimlock" then
+        targetPartName = Config.DaHood.Aimlock.TargetPart
+    elseif mode == "silent" then
+        targetPartName = Config.DaHood.SilentTargetPart or Config.DaHood.Aimlock.TargetPart
+    else
+        targetPartName = Config.DaHood.Aimlock.TargetPart
+    end
+    
+    local targetPart = character:FindFirstChild(targetPartName)
     if targetPart and targetPart:IsA("BasePart") then
         return targetPart
     end
+    
+    -- Fallback to HumanoidRootPart if target part not found
     local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
     if humanoidRootPart then
         return humanoidRootPart
     end
+    
+    -- Fallback to Head
     local head = character:FindFirstChild("Head")
     if head then
         return head
@@ -1191,7 +1248,7 @@ local function getTargetPart(character)
 end
 
 local function isVisible(targetPart)
-    if not DaHoodSettings.WallCheck then return true end
+    if not Config.DaHood.WallCheck then return true end
     local character = LocalPlayer.Character
     if not character then return false end
     local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
@@ -1207,25 +1264,27 @@ local function isVisible(targetPart)
     return raycastResult == nil
 end
 
-function getNearestPlayer()
-    local ClosestDistance = math.huge
-    local ClosestPlayer = nil
+function FindNearestEnemy()
+    local ClosestDistance, ClosestPlayer = math.huge, nil
     local CenterPosition = Vector2.new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y / 2)
-    
-    if not isLocalPlayerAlive() then return nil end
     
     for _, Player in ipairs(Players:GetPlayers()) do
         if Player ~= LocalPlayer then
             local Character = Player.Character
-            if Character and isCharacterAlive(Character) then
-                local targetPart = getTargetPart(Character)
+            if Character and Character:FindFirstChild("HumanoidRootPart") and Character.Humanoid.Health > 0 then
+                local targetPart = getTargetPart(Character, "camlock")
                 if targetPart then
                     local Position, IsVisibleOnViewport = CurrentCamera:WorldToViewportPoint(targetPart.Position)
+                    
                     if IsVisibleOnViewport then
-                        local screenPos = Vector2.new(Position.X, Position.Y)
-                        local Distance = (CenterPosition - screenPos).Magnitude
-                        if Distance < ClosestDistance then
-                            if not DaHoodSettings.WallCheck or isVisible(targetPart) then
+                        -- Raycast to check if actually visible (not through walls)
+                        local ray = Ray.new(CurrentCamera.CFrame.Position, (targetPart.Position - CurrentCamera.CFrame.Position).Unit * (CurrentCamera.CFrame.Position - targetPart.Position).Magnitude)
+                        local part, hitPosition = workspace:FindPartOnRay(ray, LocalPlayer.Character, false, true)
+                        
+                        -- If we hit the target's character or nothing (no wall), it's visible
+                        if part == nil or part:IsDescendantOf(Character) then
+                            local Distance = (CenterPosition - Vector2.new(Position.X, Position.Y)).Magnitude
+                            if Distance < ClosestDistance then
                                 ClosestPlayer = targetPart
                                 ClosestDistance = Distance
                             end
@@ -1236,18 +1295,19 @@ function getNearestPlayer()
         end
     end
     
-    if DaHoodSettings.TargetNPCs then
+    if Config.DaHood.TargetNPCs then
         local npcBots = findNPCBots()
         for _, npc in pairs(npcBots) do
             if isCharacterAlive(npc) then
-                local targetPart = getTargetPart(npc)
+                local targetPart = getTargetPart(npc, "camlock")
                 if targetPart then
                     local Position, IsVisibleOnViewport = CurrentCamera:WorldToViewportPoint(targetPart.Position)
                     if IsVisibleOnViewport then
-                        local screenPos = Vector2.new(Position.X, Position.Y)
-                        local Distance = (CenterPosition - screenPos).Magnitude
-                        if Distance < ClosestDistance then
-                            if not DaHoodSettings.WallCheck or isVisible(targetPart) then
+                        local ray = Ray.new(CurrentCamera.CFrame.Position, (targetPart.Position - CurrentCamera.CFrame.Position).Unit * (CurrentCamera.CFrame.Position - targetPart.Position).Magnitude)
+                        local part, hitPosition = workspace:FindPartOnRay(ray, LocalPlayer.Character, false, true)
+                        if part == nil or part:IsDescendantOf(npc) then
+                            local Distance = (CenterPosition - Vector2.new(Position.X, Position.Y)).Magnitude
+                            if Distance < ClosestDistance then
                                 ClosestPlayer = targetPart
                                 ClosestDistance = Distance
                             end
@@ -1261,58 +1321,8 @@ function getNearestPlayer()
     return ClosestPlayer
 end
 
-function FindNearestEnemy()
-    local ClosestDistance = math.huge
-    local ClosestPlayer = nil
-    local CenterPosition = Vector2.new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y / 2)
-    
-    if not isLocalPlayerAlive() then return nil end
-    
-    for _, Player in ipairs(Players:GetPlayers()) do
-        if Player ~= LocalPlayer then
-            local Character = Player.Character
-            if Character and isCharacterAlive(Character) then
-                local targetPart = getTargetPart(Character)
-                if targetPart then
-                    local Position, IsVisibleOnViewport = CurrentCamera:WorldToViewportPoint(targetPart.Position)
-                    if IsVisibleOnViewport then
-                        local screenPos = Vector2.new(Position.X, Position.Y)
-                        local Distance = (CenterPosition - screenPos).Magnitude
-                        if Distance < ClosestDistance and Distance <= Aiming.FOV then
-                            if not DaHoodSettings.WallCheck or isVisible(targetPart) then
-                                ClosestPlayer = targetPart
-                                ClosestDistance = Distance
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    if DaHoodSettings.TargetNPCs then
-        local npcBots = findNPCBots()
-        for _, npc in pairs(npcBots) do
-            if isCharacterAlive(npc) then
-                local targetPart = getTargetPart(npc)
-                if targetPart then
-                    local Position, IsVisibleOnViewport = CurrentCamera:WorldToViewportPoint(targetPart.Position)
-                    if IsVisibleOnViewport then
-                        local screenPos = Vector2.new(Position.X, Position.Y)
-                        local Distance = (CenterPosition - screenPos).Magnitude
-                        if Distance < ClosestDistance and Distance <= Aiming.FOV then
-                            if not DaHoodSettings.WallCheck or isVisible(targetPart) then
-                                ClosestPlayer = targetPart
-                                ClosestDistance = Distance
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    return ClosestPlayer
+function getNearestPlayer()
+    return FindNearestEnemy()
 end
 
 function getPredictedPosition(targetPart, predictionType)
@@ -1330,11 +1340,11 @@ function getPredictedPosition(targetPart, predictionType)
     
     local predValue
     if predictionType == "camlock" then
-        predValue = DaHoodSettings.CamlockPrediction
+        predValue = Config.DaHood.Camlock.Prediction
     elseif predictionType == "silent" then
-        predValue = DaHoodSettings.SilentPrediction
+        predValue = Config.DaHood.SilentPrediction or 0.124
     else
-        predValue = Aimlock.Prediction
+        predValue = Config.DaHood.Aimlock.Prediction
     end
     
     local predictedPosition = targetPosition + (targetVelocity * predValue * adjustedTravelTime) + 
@@ -1586,7 +1596,7 @@ local AutoAirFrame = Create("Frame", {
 local function updateCamlockButton()
     local button = CamlockFrame:FindFirstChild("Button")
     if button then
-        if DaHoodSettings.CamlockEnabled then
+        if CamlockState then
             button.BackgroundColor3 = Color3.fromRGB(80, 160, 80)
             button.Text = "ON"
         else
@@ -1599,7 +1609,7 @@ end
 local function updateAutoShootButton()
     local button = AutoShootFrame:FindFirstChild("Button")
     if button then
-        if DaHoodSettings.AutoShoot then
+        if Config.DaHood.AutoShoot then
             button.BackgroundColor3 = Color3.fromRGB(80, 160, 80)
             button.Text = "ON"
         else
@@ -1625,7 +1635,7 @@ end
 local function updateAutoAirButton()
     local button = AutoAirFrame:FindFirstChild("Button")
     if button then
-        if DaHoodSettings.AutoAir then
+        if Config.DaHood.AutoAir then
             button.BackgroundColor3 = Color3.fromRGB(80, 160, 80)
             button.Text = "ON"
         else
@@ -1662,19 +1672,17 @@ local function toggleAimlock(state)
 end
 
 CamlockFrame.Button.MouseButton1Click:Connect(function()
-    DaHoodSettings.CamlockEnabled = not DaHoodSettings.CamlockEnabled
-    if DaHoodSettings.CamlockEnabled then
-        Aiming.CurrentTarget = FindNearestEnemy()
-        Aiming.HasSearchedForTarget = true
+    CamlockState = not CamlockState
+    if CamlockState then
+        enemy = FindNearestEnemy()
     else
-        Aiming.CurrentTarget = nil
-        Aiming.HasSearchedForTarget = false
+        enemy = nil
     end
     updateCamlockButton()
 end)
 
 AutoShootFrame.Button.MouseButton1Click:Connect(function()
-    DaHoodSettings.AutoShoot = not DaHoodSettings.AutoShoot
+    Config.DaHood.AutoShoot = not Config.DaHood.AutoShoot
     updateAutoShootButton()
 end)
 
@@ -1683,8 +1691,8 @@ AimlockFrame.Button.MouseButton1Click:Connect(function()
 end)
 
 AutoAirFrame.Button.MouseButton1Click:Connect(function()
-    DaHoodSettings.AutoAir = not DaHoodSettings.AutoAir
-    if not DaHoodSettings.AutoAir then
+    Config.DaHood.AutoAir = not Config.DaHood.AutoAir
+    if not Config.DaHood.AutoAir then
         if IsAutoAirActive then IsAutoAirActive = false end
         if IsCamlockAutoAirActive then IsCamlockAutoAirActive = false end
         toolActivated = false
@@ -1874,7 +1882,7 @@ local function updateVisuals()
         return
     end
     
-    if DaHoodSettings.ShowChams then
+    if Config.DaHood.Visuals.ShowChams then
         cleanupVisualsForCharacter(character)
         for _, part in ipairs(character:GetChildren()) do
             if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
@@ -1897,7 +1905,7 @@ local function updateVisuals()
         end
     end
     
-    if DaHoodSettings.ShowTracer then
+    if Config.DaHood.Visuals.ShowTracer then
         local rootPart = character:FindFirstChild("HumanoidRootPart") or targetPart
         if rootPart then
             local screenPoint, onScreen = CurrentCamera:WorldToViewportPoint(rootPart.Position)
@@ -1916,7 +1924,7 @@ local function updateVisuals()
         Visuals.TracerLine.Visible = false
     end
     
-    if DaHoodSettings.ShowNameESP then
+    if Config.DaHood.Visuals.ShowNameESP then
         local rootPart = character:FindFirstChild("HumanoidRootPart") or targetPart
         if rootPart then
             local screenPoint, onScreen = CurrentCamera:WorldToViewportPoint(rootPart.Position)
@@ -1949,12 +1957,12 @@ end
 setupVisuals()
 
 local function updateFOVValue(value)
-    DaHoodSettings.FOV = math.clamp(value, 50, 200)
-    FOVCircle.Size = UDim2.new(0, DaHoodSettings.FOV * 2, 0, DaHoodSettings.FOV * 2)
+    Config.DaHood.FOV = math.clamp(value, 50, 200)
+    FOVCircle.Size = UDim2.new(0, Config.DaHood.FOV * 2, 0, Config.DaHood.FOV * 2)
 end
 
 local function updateFOVCircle()
-    FOVCircle.Visible = DaHoodSettings.SilentAim
+    FOVCircle.Visible = Config.DaHood.SilentAim
 end
 
 local function IsPlayerAirborne(humanoid)
@@ -1970,8 +1978,8 @@ local function IsPlayerAirborne(humanoid)
         }
         local isGrounded = table.find(groundedStates, humanoid:GetState()) ~= nil
         
-        local isFalling = velocityY < DaHoodSettings.FallCheck
-        local isJumping = velocityY > DaHoodSettings.JumpCheck
+        local isFalling = velocityY < Config.Vepar.JumpCheck.Fall
+        local isJumping = velocityY > Config.Vepar.JumpCheck.Jump
         
         return (isJumping or isFalling) and not isGrounded
     end
@@ -1979,9 +1987,9 @@ local function IsPlayerAirborne(humanoid)
 end
 
 local function AutoAir()
-    if DaHoodSettings.AutoAir then
-        if DaHoodSettings.CamlockEnabled and Aiming.CurrentTarget then
-            local targetCharacter = Aiming.CurrentTarget.Parent
+    if Config.DaHood.AutoAir then
+        if CamlockState and enemy then
+            local targetCharacter = enemy.Parent
             local enemyHumanoid = targetCharacter and targetCharacter:FindFirstChild("Humanoid")
             local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
             
@@ -2018,20 +2026,20 @@ end
 
 function getNearestPointOfView()
     local nearestPart = nil
-    local nearestDistance = DaHoodSettings.FOV
+    local nearestDistance = Config.DaHood.FOV
     local screenCenter = Vector2.new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y / 2)
     
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
             local character = player.Character
             if character and isCharacterAlive(character) and isLocalPlayerAlive() then
-                local targetPart = getTargetPart(character)
+                local targetPart = getTargetPart(character, "silent")
                 if targetPart then
                     local screenPoint, onScreen = CurrentCamera:WorldToViewportPoint(targetPart.Position)
                     if onScreen then
                         local screenPos = Vector2.new(screenPoint.X, screenPoint.Y)
                         local distance = (screenPos - screenCenter).Magnitude
-                        if distance <= DaHoodSettings.FOV and distance < nearestDistance then
+                        if distance <= Config.DaHood.FOV and distance < nearestDistance then
                             if isVisible(targetPart) then
                                 nearestDistance = distance
                                 nearestPart = targetPart
@@ -2043,17 +2051,17 @@ function getNearestPointOfView()
         end
     end
     
-    if DaHoodSettings.TargetNPCs then
+    if Config.DaHood.TargetNPCs then
         local npcBots = findNPCBots()
         for _, npc in pairs(npcBots) do
             if isCharacterAlive(npc) then
-                local targetPart = getTargetPart(npc)
+                local targetPart = getTargetPart(npc, "silent")
                 if targetPart then
                     local screenPoint, onScreen = CurrentCamera:WorldToViewportPoint(targetPart.Position)
                     if onScreen then
                         local screenPos = Vector2.new(screenPoint.X, screenPoint.Y)
                         local distance = (screenPos - screenCenter).Magnitude
-                        if distance <= DaHoodSettings.FOV and distance < nearestDistance then
+                        if distance <= Config.DaHood.FOV and distance < nearestDistance then
                             if isVisible(targetPart) then
                                 nearestDistance = distance
                                 nearestPart = targetPart
@@ -2126,7 +2134,7 @@ local function updateAimlock()
 end
 
 local function checkAutoShoot()
-    if not DaHoodSettings.AutoShoot then return end
+    if not Config.DaHood.AutoShoot then return end
     local character = LocalPlayer.Character
     local currentTool = character and character:FindFirstChildOfClass("Tool")
     if currentTool then
@@ -2148,7 +2156,7 @@ local function isHittablePlayer(part)
 end
 
 local function triggerBotLoop()
-    if not DaHoodSettings.TriggerBotEnabled then return end
+    if not Config.DaHood.TriggerBot.Enabled then return end
     local now = tick()
     if now - TriggerBotLastActivation < TriggerBotActivationDelay then return end
     local character = LocalPlayer.Character
@@ -2179,7 +2187,7 @@ local function triggerBotLoop()
         if hitPlayer and hitPlayer ~= LocalPlayer then
             local targetHRP = hitPlayer.Character:FindFirstChild("HumanoidRootPart")
             if targetHRP then
-                local predictedPos = targetHRP.Position + targetHRP.Velocity * DaHoodSettings.TriggerBotPrediction
+                local predictedPos = targetHRP.Position + targetHRP.Velocity * Config.DaHood.TriggerBot.Prediction
                 local direction = (predictedPos - rayOrigin).Unit * 1000
                 local predictionResult = Workspace:Raycast(rayOrigin, direction, raycastParams)
                 if predictionResult and isHittablePlayer(predictionResult.Instance) then
@@ -2191,25 +2199,28 @@ local function triggerBotLoop()
     end
 end
 
-local function camlockLoop()
-    if not DaHoodSettings.CamlockEnabled then
-        Aiming.CurrentTarget = nil
-        Aiming.HasSearchedForTarget = false
-        return
-    end
-    if Aiming.CurrentTarget and isTargetValid(Aiming.CurrentTarget) then
-        local predictedPosition = getPredictedPosition(Aiming.CurrentTarget, "camlock")
-        if not predictedPosition then
-            Aiming.CurrentTarget = nil
-            return
+RunService.Heartbeat:Connect(function()
+    if CamlockState then
+        if enemy then
+            local camera = workspace.CurrentCamera
+            local enemyPart = getTargetPart(enemy.Parent, "camlock")
+            if enemyPart then
+                local targetCFrame = CFrame.new(camera.CFrame.p, enemyPart.Position + enemyPart.Velocity * PredictionCamlock)
+                if SmoothEnabled then
+                    camera.CFrame = camera.CFrame:Lerp(targetCFrame, Smoothness)
+                else
+                    camera.CFrame = targetCFrame
+                end
+            end
         end
-        local camera = Workspace.CurrentCamera
-        local lookVector = (predictedPosition - camera.CFrame.Position).Unit
-        camera.CFrame = CFrame.new(camera.CFrame.Position, camera.CFrame.Position + lookVector)
-    else
-        Aiming.CurrentTarget = FindNearestEnemy()
     end
-end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if CamlockState and enemy == nil then
+        enemy = FindNearestEnemy()
+    end
+end)
 
 local hookedInstances = {}
 local originalIndex
@@ -2218,7 +2229,7 @@ local function safeHookFunction()
     originalIndex = hookmetamethod( game, "__index", function(t, k)
         if t:IsA("Mouse") and (k == "Hit" or k == "Target") then
             local mouseInstance = t
-            if DaHoodSettings.SilentAim then
+            if Config.DaHood.SilentAim then
                 local target = getNearestPointOfView()
                 if target then
                     local predictedPosition = getPredictedPosition(target, "silent")
@@ -2271,35 +2282,35 @@ local Cfg = Library:Tab("Cfg", "12403097620")
 local AimGroup = Legit:Group("Aimbot")
 
 AimGroup:Toggle({Name = "Camlock", Tooltip = "Enable camera lock functionality", Callback = function(v)
-    DaHoodSettings.CamlockEnabled = v
-    CamlockFrame.Visible = v
+    CamlockState = v
+    Config.DaHood.Camlock.Enabled = v
     if v then
-        Aiming.CurrentTarget = FindNearestEnemy()
-        Aiming.HasSearchedForTarget = true
+        enemy = FindNearestEnemy()
     else
-        Aiming.CurrentTarget = nil
-        Aiming.HasSearchedForTarget = false
+        enemy = nil
     end
+    CamlockFrame.Visible = v
     updateCamlockButton()
 end})
 
 AimGroup:Toggle({Name = "Silent Aim", Tooltip = "Enable silent aim functionality", Callback = function(v)
-    DaHoodSettings.SilentAim = v
-    getgenv().SilentAimEnabled = v
+    Config.DaHood.SilentAim = v
     updateFOVCircle()
 end})
 
-AimGroup:Dropdown({Name = "Target Part", Options = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "LeftHand", "RightHand", "LeftFoot", "RightFoot"}, Default = "Head", Callback = function(v)
-    DaHoodSettings.TargetPart = v
-    getgenv().HitPart = v
-    if DaHoodSettings.CamlockEnabled and Aiming.CurrentTarget then
-        Aiming.CurrentTarget = FindNearestEnemy()
+AimGroup:Dropdown({Name = "Camlock Part", Options = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "LeftHand", "RightHand", "LeftFoot", "RightFoot"}, Default = Config.DaHood.Camlock.TargetPart, Callback = function(v)
+    Config.DaHood.Camlock.TargetPart = v
+    if CamlockState then
+        enemy = FindNearestEnemy()
     end
 end})
 
-AimGroup:Slider({Name = "FOV Radius", Min = 50, Max = 200, Default = 100, Unit = "px", Callback = function(v)
+AimGroup:Dropdown({Name = "Silent Aim Part", Options = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "LeftHand", "RightHand", "LeftFoot", "RightFoot"}, Default = Config.DaHood.Aimlock.TargetPart, Callback = function(v)
+    Config.DaHood.SilentTargetPart = v
+end})
+
+AimGroup:Slider({Name = "FOV Radius", Min = 50, Max = 200, Default = Config.DaHood.FOV, Unit = "px", Callback = function(v)
     updateFOVValue(v)
-    getgenv().SilentAimFOVSize = v
 end})
 
 local AimlockGroup = Legit:Group("Aimlock")
@@ -2309,8 +2320,9 @@ AimlockGroup:Toggle({Name = "Aimlock", Tooltip = "Lock onto one target until tog
     AimlockFrame.Visible = v
 end})
 
-AimlockGroup:Dropdown({Name = "Aimlock Part", Options = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "LeftHand", "RightHand", "LeftFoot", "RightFoot"}, Default = "Head", Callback = function(v)
-    DaHoodSettings.TargetPart = v
+AimlockGroup:Dropdown({Name = "Aimlock Part", Options = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "LeftHand", "RightHand", "LeftFoot", "RightFoot"}, Default = Config.DaHood.Aimlock.TargetPart, Callback = function(v)
+    Config.DaHood.Aimlock.TargetPart = v
+    Aimlock.TargetPart = v
     if Aimlock.Enabled and Aimlock.CurrentTarget then
         Aimlock.IsLocked = false
         Aimlock.CurrentTarget = nil
@@ -2320,7 +2332,7 @@ AimlockGroup:Dropdown({Name = "Aimlock Part", Options = {"Head", "HumanoidRootPa
 end})
 
 AimlockGroup:Toggle({Name = "Show Chams", Tooltip = "Show chams on aimlock target", Callback = function(v)
-    DaHoodSettings.ShowChams = v
+    Config.DaHood.Visuals.ShowChams = v
     if not v then
         if Visuals.ChamsFolder then
             for _, cham in ipairs(Visuals.ChamsFolder:GetChildren()) do
@@ -2331,14 +2343,14 @@ AimlockGroup:Toggle({Name = "Show Chams", Tooltip = "Show chams on aimlock targe
 end})
 
 AimlockGroup:Toggle({Name = "Show Tracer", Tooltip = "Show tracer line to aimlock target", Callback = function(v)
-    DaHoodSettings.ShowTracer = v
+    Config.DaHood.Visuals.ShowTracer = v
     if not v and Visuals.TracerLine then
         Visuals.TracerLine.Visible = false
     end
 end})
 
 AimlockGroup:Toggle({Name = "Show Name ESP", Tooltip = "Show target's name above head", Callback = function(v)
-    DaHoodSettings.ShowNameESP = v
+    Config.DaHood.Visuals.ShowNameESP = v
     if not v then
         if Visuals.NameESP then
             Visuals.NameESP.Visible = false
@@ -2350,17 +2362,17 @@ end})
 local TriggerGroup = Legit:Group("TriggerBot")
 
 TriggerGroup:Toggle({Name = "TriggerBot", Tooltip = "Automatically shoot when crosshair is on target", Callback = function(v)
-    DaHoodSettings.TriggerBotEnabled = v
+    Config.DaHood.TriggerBot.Enabled = v
 end})
 
-TriggerGroup:Slider({Name = "Prediction", Min = 0.01, Max = 0.09, Default = 0.09, Unit = "", Callback = function(v)
-    DaHoodSettings.TriggerBotPrediction = v
+TriggerGroup:Slider({Name = "Prediction", Min = 0.01, Max = 0.09, Default = Config.DaHood.TriggerBot.Prediction, Unit = "", Callback = function(v)
+    Config.DaHood.TriggerBot.Prediction = v
 end})
 
 local MiscGroup = Misc:Group("Misc Features")
 
 MiscGroup:Toggle({Name = "Auto Air", Tooltip = "Auto shoot when target is in the air", Callback = function(v)
-    DaHoodSettings.AutoAir = v
+    Config.DaHood.AutoAir = v
     AutoAirFrame.Visible = v
     if not v then
         if IsAutoAirActive then IsAutoAirActive = false end
@@ -2371,19 +2383,19 @@ MiscGroup:Toggle({Name = "Auto Air", Tooltip = "Auto shoot when target is in the
 end})
 
 MiscGroup:Toggle({Name = "Auto Shoot", Tooltip = "Continuously activate tool when enabled", Callback = function(v)
-    DaHoodSettings.AutoShoot = v
+    Config.DaHood.AutoShoot = v
     AutoShootFrame.Visible = v
     updateAutoShootButton()
 end})
 
 MiscGroup:Toggle({Name = "Wall Check", Tooltip = "Only target visible players", Callback = function(v)
-    DaHoodSettings.WallCheck = v
+    Config.DaHood.WallCheck = v
 end})
 
 MiscGroup:Toggle({Name = "Target NPCs", Tooltip = "Enable targeting of NPC bots", Callback = function(v)
-    DaHoodSettings.TargetNPCs = v
-    if DaHoodSettings.CamlockEnabled and Aiming.CurrentTarget then
-        Aiming.CurrentTarget = FindNearestEnemy()
+    Config.DaHood.TargetNPCs = v
+    if CamlockState then
+        enemy = FindNearestEnemy()
     end
     if Aimlock.Enabled and Aimlock.CurrentTarget then
         Aimlock.IsLocked = false
@@ -2395,8 +2407,9 @@ end})
 
 local ConfigGroup = Cfg:Group("Configuration")
 
-ConfigGroup:Keybind({Name = "Menu Key", Default = Enum.KeyCode.RightShift, Callback = function(k)
+ConfigGroup:Keybind({Name = "Menu Key", Default = Config.UI.MenuKey, Callback = function(k)
     Library.MenuKey = k
+    Config.UI.MenuKey = k
 end})
 
 ConfigGroup:Button({Name = "Unload", Variant = "Danger", Callback = function()
@@ -2406,14 +2419,13 @@ ConfigGroup:Button({Name = "Unload", Variant = "Danger", Callback = function()
     if Visuals.NameESP then Visuals.NameESP:Remove() end
 end})
 
-updateFOVValue(100)
+updateFOVValue(Config.DaHood.FOV)
 updateFOVCircle()
 
 RunService.RenderStepped:Connect(function()
     updateAimlock()
     AutoAir()
     triggerBotLoop()
-    camlockLoop()
 end)
 
 RunService.RenderStepped:Connect(function()
@@ -2425,7 +2437,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-    if DaHoodSettings.SilentAim then
+    if Config.DaHood.SilentAim then
         updateFOVCircle()
     end
 end)
