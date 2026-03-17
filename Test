@@ -1803,6 +1803,151 @@ UIS.InputChanged:Connect(function(input)
     end
 end)
 
+local function setupVisuals()
+    Visuals.ChamsFolder = Instance.new("Folder")
+    Visuals.ChamsFolder.Name = "AimlockChams"
+    Visuals.ChamsFolder.Parent = ScreenGui
+    
+    Visuals.TracerLine = Drawing.new("Line")
+    Visuals.TracerLine.Visible = false
+    Visuals.TracerLine.Color = Color3.fromRGB(255, 255, 255)
+    Visuals.TracerLine.Thickness = 1.5
+    Visuals.TracerLine.Transparency = 0.8
+    
+    Visuals.NameESP = Drawing.new("Text")
+    Visuals.NameESP.Visible = false
+    Visuals.NameESP.Color = Color3.fromRGB(255, 255, 255)
+    Visuals.NameESP.Size = 18
+    Visuals.NameESP.Center = true
+    Visuals.NameESP.Outline = true
+    Visuals.NameESP.OutlineColor = Color3.fromRGB(0, 0, 0)
+    Visuals.NameESP.Font = 2
+end
+
+local function hideAllVisuals()
+    if Visuals.ChamsFolder then
+        for _, cham in ipairs(Visuals.ChamsFolder:GetChildren()) do
+            cham:Destroy()
+        end
+    end
+    if Visuals.TracerLine then
+        Visuals.TracerLine.Visible = false
+    end
+    if Visuals.NameESP then
+        Visuals.NameESP.Visible = false
+    end
+    Visuals.LastTargetCharacter = nil
+end
+
+local function cleanupVisualsForCharacter(character)
+    if Visuals.ChamsFolder then
+        for _, cham in ipairs(Visuals.ChamsFolder:GetChildren()) do
+            if cham.Adornee and cham.Adornee.Parent == character then
+                cham:Destroy()
+            end
+        end
+    end
+end
+
+local function getTargetDisplayName(targetPart)
+    if not targetPart then return "Unknown" end
+    local character = targetPart.Parent
+    if not character then return "Unknown" end
+    local player = Players:GetPlayerFromCharacter(character)
+    if player then
+        return player.DisplayName or player.Name
+    else
+        return character.Name
+    end
+end
+
+local function updateVisuals()
+    if not Aimlock.Enabled or not Aimlock.IsLocked or not Aimlock.CurrentTarget then
+        hideAllVisuals()
+        return
+    end
+    
+    local targetPart = Aimlock.CurrentTarget
+    local character = targetPart and targetPart.Parent
+    if not character then
+        hideAllVisuals()
+        return
+    end
+    
+    if DaHoodSettings.ShowChams then
+        cleanupVisualsForCharacter(character)
+        for _, part in ipairs(character:GetChildren()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                local cham = Instance.new("BoxHandleAdornment")
+                cham.Name = "Cham_" .. part.Name
+                cham.Adornee = part
+                cham.AlwaysOnTop = true
+                cham.ZIndex = 10
+                cham.Size = part.Size
+                cham.Transparency = 0.7
+                cham.Color3 = Color3.fromRGB(255, 255, 255)
+                cham.Parent = Visuals.ChamsFolder
+            end
+        end
+    else
+        if Visuals.ChamsFolder then
+            for _, cham in ipairs(Visuals.ChamsFolder:GetChildren()) do
+                cham:Destroy()
+            end
+        end
+    end
+    
+    if DaHoodSettings.ShowTracer then
+        local rootPart = character:FindFirstChild("HumanoidRootPart") or targetPart
+        if rootPart then
+            local screenPoint, onScreen = CurrentCamera:WorldToViewportPoint(rootPart.Position)
+            if onScreen then
+                local viewport = CurrentCamera.ViewportSize
+                Visuals.TracerLine.From = Vector2.new(viewport.X / 2, viewport.Y)
+                Visuals.TracerLine.To = Vector2.new(screenPoint.X, screenPoint.Y)
+                Visuals.TracerLine.Visible = true
+            else
+                Visuals.TracerLine.Visible = false
+            end
+        else
+            Visuals.TracerLine.Visible = false
+        end
+    else
+        Visuals.TracerLine.Visible = false
+    end
+    
+    if DaHoodSettings.ShowNameESP then
+        local rootPart = character:FindFirstChild("HumanoidRootPart") or targetPart
+        if rootPart then
+            local screenPoint, onScreen = CurrentCamera:WorldToViewportPoint(rootPart.Position)
+            if onScreen then
+                if Visuals.LastTargetCharacter ~= character then
+                    local displayName = getTargetDisplayName(targetPart)
+                    Visuals.NameESP.Text = displayName
+                    Visuals.LastTargetCharacter = character
+                end
+                local head = character:FindFirstChild("Head")
+                if head then
+                    local headScreenPoint = CurrentCamera:WorldToViewportPoint(head.Position + Vector3.new(0, 2.5, 0))
+                    Visuals.NameESP.Position = Vector2.new(headScreenPoint.X, headScreenPoint.Y)
+                else
+                    Visuals.NameESP.Position = Vector2.new(screenPoint.X, screenPoint.Y - 40)
+                end
+                Visuals.NameESP.Visible = true
+            else
+                Visuals.NameESP.Visible = false
+            end
+        else
+            Visuals.NameESP.Visible = false
+        end
+    else
+        Visuals.NameESP.Visible = false
+        Visuals.LastTargetCharacter = nil
+    end
+end
+
+setupVisuals()
+
 local function updateFOVValue(value)
     DaHoodSettings.FOV = math.clamp(value, 50, 200)
     FOVCircle.Size = UDim2.new(0, DaHoodSettings.FOV * 2, 0, DaHoodSettings.FOV * 2)
@@ -1931,6 +2076,7 @@ local function findAndLockTarget()
             Aimlock.CurrentTarget = newTarget
             Aimlock.IsLocked = true
             Aimlock.HasSearchedForTarget = true
+            Visuals.LastTargetCharacter = nil
             return true
         else
             Aimlock.HasSearchedForTarget = true
@@ -1945,6 +2091,7 @@ local function validateLockedTarget()
     if not isTargetValid(Aimlock.CurrentTarget) then
         Aimlock.CurrentTarget = nil
         Aimlock.IsLocked = false
+        hideAllVisuals()
         return false
     end
     return true
@@ -1955,12 +2102,14 @@ local function updateAimlock()
         Aimlock.CurrentTarget = nil
         Aimlock.IsLocked = false
         Aimlock.HasSearchedForTarget = false
+        hideAllVisuals()
         return
     end
     if not isLocalPlayerAlive() then
         Aimlock.CurrentTarget = nil
         Aimlock.IsLocked = false
         Aimlock.HasSearchedForTarget = false
+        hideAllVisuals()
         return
     end
     if Aimlock.IsLocked then
@@ -1973,6 +2122,7 @@ local function updateAimlock()
             findAndLockTarget()
         end
     end
+    updateVisuals()
 end
 
 local function checkAutoShoot()
@@ -2084,6 +2234,7 @@ local function safeHookFunction()
                 if Aimlock.CurrentTarget and not isTargetValid(Aimlock.CurrentTarget) then
                     Aimlock.CurrentTarget = nil
                     Aimlock.IsLocked = false
+                    hideAllVisuals()
                 end
                 if Aimlock.CurrentTarget then
                     local predictedPosition = getPredictedPosition(Aimlock.CurrentTarget)
@@ -2109,6 +2260,7 @@ Players.PlayerRemoving:Connect( function(player)
         Aimlock.CurrentTarget = nil
         Aimlock.IsLocked = false
         Aimlock.HasSearchedForTarget = true
+        hideAllVisuals()
     end
 end)
 
@@ -2169,17 +2321,30 @@ end})
 
 AimlockGroup:Toggle({Name = "Show Chams", Tooltip = "Show chams on aimlock target", Callback = function(v)
     DaHoodSettings.ShowChams = v
-    -- Visuals functionality removed
+    if not v then
+        if Visuals.ChamsFolder then
+            for _, cham in ipairs(Visuals.ChamsFolder:GetChildren()) do
+                cham:Destroy()
+            end
+        end
+    end
 end})
 
 AimlockGroup:Toggle({Name = "Show Tracer", Tooltip = "Show tracer line to aimlock target", Callback = function(v)
     DaHoodSettings.ShowTracer = v
-    -- Visuals functionality removed
+    if not v and Visuals.TracerLine then
+        Visuals.TracerLine.Visible = false
+    end
 end})
 
 AimlockGroup:Toggle({Name = "Show Name ESP", Tooltip = "Show target's name above head", Callback = function(v)
     DaHoodSettings.ShowNameESP = v
-    -- Visuals functionality removed
+    if not v then
+        if Visuals.NameESP then
+            Visuals.NameESP.Visible = false
+        end
+        Visuals.LastTargetCharacter = nil
+    end
 end})
 
 local TriggerGroup = Legit:Group("TriggerBot")
@@ -2237,6 +2402,8 @@ end})
 ConfigGroup:Button({Name = "Unload", Variant = "Danger", Callback = function()
     Library.Unloaded = true
     ScreenGui:Destroy()
+    if Visuals.TracerLine then Visuals.TracerLine:Remove() end
+    if Visuals.NameESP then Visuals.NameESP:Remove() end
 end})
 
 updateFOVValue(100)
