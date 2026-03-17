@@ -1,4 +1,50 @@
-loadstring(game:HttpGet("https://raw.githubusercontent.com/Pixeluted/adoniscries/main/Source.lua",true))()
+local g = getinfo or debug.getinfo 
+local d = false 
+local h = {} 
+local x, y 
+setthreadidentity(2) 
+for i, v in getgc(true) do 
+    if typeof(v) == "table" then 
+        local a = rawget(v, "Detected") 
+        local b = rawget(v, "Kill") 
+        if typeof(a) == "function" and not x then 
+            x = a 
+            local o 
+            o = hookfunction( x, function(c, f, n) 
+                if c ~= "_" then 
+                    if d then 
+                        warn("Adonis AntiCheat flagged\nMethod: " .. tostring(c) .. "\nInfo: " .. tostring(f)) 
+                    end 
+                end 
+                return true 
+            end ) 
+            table.insert(h, x) 
+        end 
+        if rawget(v, "Variables") and rawget(v, "Process") and typeof(b) == "function" and not y then 
+            y = b 
+            local o 
+            o = hookfunction( y, function(f) 
+                if d then 
+                    warn("Adonis AntiCheat tried to kill (fallback): " .. tostring(f)) 
+                end 
+            end ) 
+            table.insert(h, y) 
+        end 
+    end 
+end 
+local o 
+o = hookfunction( getrenv().debug.info, newcclosure( function(...) 
+    local a, f = ... 
+    if x and a == x then 
+        if d then 
+            warn("zins | adonis bypassed") 
+        end 
+        return coroutine.yield(coroutine.running()) 
+    end 
+    return o(...) 
+end ) ) 
+setthreadidentity(7)
+
 getgenv().Vepar = {
     ['Camlock'] = {
         ['Prediction'] = 0.1475,
@@ -21,201 +67,1753 @@ getgenv().Vepar = {
         },
         ['AutoAir'] = {
             ['AutoAir'] = true,
-            ['AirMaterial'] = Jump, -- Nothing, Move, Jumps, WhenMove, Around, Parent
+            ['AirMaterial'] = "Jump",
         }
     }
 }
+
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
-local Mouse = game.Players.LocalPlayer:GetMouse()
-local CamlockState = false
-local Prediction = 0.1678963
-local Smoothness = 0.405
-local SmoothEnabled = true
-local AutoAir = true
-local EnemyAir = true
-local AirshotMaterial = Jump -- Move, Around, Jumps, Nothing
-local JumpCheck = true
-local Jump = -0.92
-local Fall = -1.91
+local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
+local Player = Players.LocalPlayer
+local Mouse = Player:GetMouse()
+local ViewportSize = workspace.CurrentCamera.ViewportSize
 
--- Function to remove ESP chams
-local function removeCham(cham)
-    if cham then
-        cham:Destroy()
+local CFG = {
+    MainColor = Color3.fromRGB(14, 14, 14),
+    SecondaryColor = Color3.fromRGB(26, 26, 26),
+    AccentColor = Color3.fromRGB(189, 172, 255),
+    TextColor = Color3.fromRGB(200, 200, 200),
+    TextDark = Color3.fromRGB(120, 120, 120),
+    StrokeColor = Color3.fromRGB(40, 40, 40),
+    Font = Enum.Font.Code,
+    BaseSize = Vector2.new(600, 450)
+}
+
+local Library = {
+    Flags = {},
+    Connections = {},
+    Unloaded = false,
+    MenuKey = Enum.KeyCode.RightShift
+}
+
+local function Create(class, props, children)
+    local inst = Instance.new(class)
+    for i, v in pairs(props or {}) do
+        inst[i] = v
     end
+    for _, child in pairs(children or {}) do
+        child.Parent = inst
+    end
+    return inst
 end
-local currentCham
 
-function FindNearestEnemy()
-    local ClosestDistance, ClosestPlayer = math.huge, nil
-    local CenterPosition = Vector2.new(game:GetService("GuiService"):GetScreenResolution().X / 2, game:GetService("GuiService"):GetScreenResolution().Y / 2)
-    local camera = workspace.CurrentCamera
+local function Tween(obj, props, time, style, dir)
+    TweenService:Create(obj, TweenInfo.new(time or 0.2, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props):Play()
+end
+
+local function GetTextSize(text, size, font)
+    return game:GetService("TextService"):GetTextSize(text, size, font, Vector2.new(10000, 10000))
+end
+
+local ScreenGui = Create("ScreenGui", {
+    Name = "FlexedUI",
+    Parent = game:GetService("CoreGui"),
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    ResetOnSpawn = false,
+    IgnoreGuiInset = true
+})
+
+local UIScale = Create("UIScale", {Parent = ScreenGui})
+
+local function UpdateScale()
+    local vp = workspace.CurrentCamera.ViewportSize
+    local widthRatio = (vp.X - 40) / CFG.BaseSize.X
+    local heightRatio = (vp.Y - 40) / CFG.BaseSize.Y
+    local scale = math.min(widthRatio, heightRatio, 1)
+    UIScale.Scale = math.max(scale, 0.6)
+end
+workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateScale)
+UpdateScale()
+
+local NotificationContainer = Create("Frame", {
+    Parent = ScreenGui,
+    Position = UDim2.new(1, -20, 0, 20),
+    AnchorPoint = Vector2.new(1, 0),
+    Size = UDim2.new(0, 300, 1, 0),
+    BackgroundTransparency = 1,
+    ZIndex = 100
+})
+
+local UIListNotif = Create("UIListLayout", {
+    Parent = NotificationContainer,
+    Padding = UDim.new(0, 5),
+    HorizontalAlignment = Enum.HorizontalAlignment.Right,
+    VerticalAlignment = Enum.VerticalAlignment.Top
+})
+
+function Library:Notify(msg, type)
+    local color = (type == "success" and Color3.fromRGB(100, 255, 100)) or (type == "warning" and Color3.fromRGB(255, 100, 100)) or CFG.AccentColor
+    local Frame = Create("Frame", {
+        Parent = NotificationContainer,
+        Size = UDim2.new(0, 0, 0, 30),
+        BackgroundColor3 = CFG.MainColor,
+        BorderSizePixel = 0,
+        ClipsDescendants = true
+    }, {
+        Create("UIStroke", {Color = CFG.AccentColor, Thickness = 1, Transparency = 0.5}),
+        Create("Frame", {
+            Size = UDim2.new(0, 2, 1, 0),
+            BackgroundColor3 = color
+        }),
+        Create("TextLabel", {
+            Text = msg,
+            TextColor3 = CFG.TextColor,
+            Font = CFG.Font,
+            TextSize = 12,
+            Size = UDim2.new(1, -10, 1, 0),
+            Position = UDim2.new(0, 10, 0, 0),
+            BackgroundTransparency = 1,
+            TextXAlignment = Enum.TextXAlignment.Left
+        })
+    })
+    Tween(Frame, {Size = UDim2.new(0, 250, 0, 35)}, 0.5, Enum.EasingStyle.Back)
+    task.delay(3, function()
+        Tween(Frame, {Size = UDim2.new(0, 250, 0, 0), BackgroundTransparency = 1}, 0.5)
+        task.wait(0.5)
+        Frame:Destroy()
+    end)
+end
+
+local TooltipLabel = Create("TextLabel", {
+    Parent = ScreenGui,
+    Size = UDim2.new(0, 0, 0, 20),
+    BackgroundColor3 = CFG.SecondaryColor,
+    TextColor3 = CFG.TextColor,
+    TextSize = 11,
+    Font = CFG.Font,
+    BorderSizePixel = 0,
+    Visible = false,
+    ZIndex = 200
+}, {
+    Create("UIPadding", {PaddingLeft = UDim.new(0, 5), PaddingRight = UDim.new(0, 5)}),
+    Create("UIStroke", {Color = CFG.StrokeColor})
+})
+
+local function AddTooltip(obj, text)
+    obj.MouseEnter:Connect(function()
+        TooltipLabel.Text = text
+        TooltipLabel.Size = UDim2.fromOffset(GetTextSize(text, 11, CFG.Font).X + 12, 20)
+        TooltipLabel.Visible = true
+    end)
+    obj.MouseLeave:Connect(function()
+        TooltipLabel.Visible = false
+    end)
+end
+
+RunService.RenderStepped:Connect(function()
+    if TooltipLabel.Visible then
+        local m = UserInputService:GetMouseLocation()
+        TooltipLabel.Position = UDim2.fromOffset(m.X + 15, m.Y + 15)
+    end
+end)
+
+local MainFrame = Create("Frame", {
+    Name = "MainFrame",
+    Parent = ScreenGui,
+    Size = UDim2.fromOffset(CFG.BaseSize.X, CFG.BaseSize.Y),
+    Position = UDim2.new(0.5, -300, 0.5, -225),
+    BackgroundColor3 = CFG.MainColor,
+    BorderSizePixel = 0
+}, {
+    Create("UIStroke", {Color = CFG.StrokeColor}),
+    Create("UICorner", {CornerRadius = UDim.new(0, 3)})
+})
+
+local Dragging, DragInput, DragStart, StartPos = false, nil, nil, nil
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        Dragging = true
+        DragStart = input.Position
+        StartPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                Dragging = false
+            end
+        end)
+    end
+end)
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        DragInput = input
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == DragInput and Dragging then
+        local delta = input.Position - DragStart
+        Tween(MainFrame, {Position = UDim2.new(StartPos.X.Scale, StartPos.X.Offset + delta.X, StartPos.Y.Scale, StartPos.Y.Offset + delta.Y)}, 0.05)
+    end
+end)
+
+local TopBar = Create("Frame", {
+    Parent = MainFrame,
+    Size = UDim2.new(1, 0, 0, 30),
+    BackgroundColor3 = CFG.MainColor,
+    BorderSizePixel = 0
+}, {
+    Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 1),
+        Position = UDim2.new(0, 0, 1, 0),
+        BackgroundColor3 = CFG.StrokeColor
+    })
+})
+
+local TitleLabel = Create("TextLabel", {
+    Parent = TopBar,
+    Text = "flexed.wtf",
+    TextColor3 = CFG.TextDark,
+    TextSize = 13,
+    Font = CFG.Font,
+    BackgroundTransparency = 1,
+    Size = UDim2.new(0, 200, 1, 0),
+    Position = UDim2.new(0, 10, 0, 0),
+    TextXAlignment = Enum.TextXAlignment.Left,
+    RichText = true
+})
+
+task.spawn(function()
+    local textList = { 
+        '', 'f', 'fl', 'fle', 'flex', 'flexe', 'flexed', 'flexed.', 'flexed.w', 'flexed.wt', 'flexed.wtf',
+        'flexed.wt', 'flexed.w', 'flexed.', 'flexed', 'flexe', 'flex', 'fle', 'fl', 'f', '' 
+    }
+    while not Library.Unloaded do
+        for _, text in ipairs(textList) do
+            if Library.Unloaded then break end
+            local display = text
+            if string.find(text, "wtf") then
+                display = string.gsub(text, "wtf", '<font color="#bdacff">wtf</font>')
+            end
+            TitleLabel.Text = display
+            task.wait(0.2)
+        end
+    end
+end)
+
+local ContentContainer = Create("Frame", {
+    Parent = MainFrame,
+    Size = UDim2.new(1, 0, 1, -30),
+    Position = UDim2.new(0, 0, 0, 30),
+    BackgroundTransparency = 1
+})
+
+local Sidebar = Create("Frame", {
+    Parent = ContentContainer,
+    Size = UDim2.new(0, 60, 1, 0),
+    BackgroundColor3 = Color3.fromRGB(17, 17, 17),
+    BorderSizePixel = 0,
+    Position = UDim2.new(0, 0, 0, 0)
+}, {
+    Create("Frame", {Size = UDim2.new(0, 1, 0, 0), Position = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1, BackgroundColor3 = CFG.StrokeColor}),
+    Create("UIListLayout", {Padding = UDim.new(0, 10), HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Top}),
+    Create("UIPadding", {PaddingTop = UDim.new(0, 15)})
+})
+
+local PagesContainer = Create("Frame", {
+    Parent = ContentContainer,
+    Size = UDim2.new(1, -60, 1, 0),
+    Position = UDim2.new(0, 60, 0, 0),
+    BackgroundTransparency = 1
+})
+
+local Tabs = {}
+local CurrentTab = nil
+
+function Library:Tab(name, icon)
+    local TabButton = Create("TextButton", {
+        Parent = Sidebar,
+        Size = UDim2.new(0, 40, 0, 40),
+        BackgroundColor3 = CFG.MainColor,
+        Text = "",
+        TextSize = 20,
+        TextColor3 = CFG.TextDark,
+        Font = CFG.Font,
+        AutoButtonColor = false
+    }, {
+        Create("ImageLabel", {
+            Name = "Icon",
+            Size = UDim2.new(0.6, 0, 0.6, 0),
+            Position = UDim2.new(0.2, 0, 0.2, 0),
+            BackgroundTransparency = 1,
+            Image = "rbxassetid://" .. icon,
+            ImageColor3 = CFG.TextDark
+        }),
+        Create("UICorner", {CornerRadius = UDim.new(0, 6)})
+    })
     
-    for _, Player in ipairs(game:GetService("Players"):GetPlayers()) do
+    local PageFrame = Create("ScrollingFrame", {
+        Parent = PagesContainer,
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Visible = false,
+        ScrollBarThickness = 2,
+        ScrollBarImageColor3 = CFG.AccentColor,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y
+    }, {
+        Create("UIPadding", {PaddingTop = UDim.new(0, 15), PaddingLeft = UDim.new(0, 15), PaddingRight = UDim.new(0, 15), PaddingBottom = UDim.new(0, 15)}),
+        Create("UIGridLayout", { CellSize = UDim2.new(0.48, 0, 0, 0), CellPadding = UDim2.new(0.02, 0, 0, 10), FillDirectionMaxCells = 2 })
+    })
+    
+    PageFrame:ClearAllChildren()
+    local Padding = Create("UIPadding", {Parent = PageFrame, PaddingTop = UDim.new(0, 15), PaddingLeft = UDim.new(0, 15), PaddingRight = UDim.new(0, 15), PaddingBottom = UDim.new(0, 15)})
+    
+    local LeftCol = Create("Frame", {Parent = PageFrame, Size = UDim2.new(0.48, 0, 1, 0), BackgroundTransparency = 1}, {
+        Create("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder})
+    })
+    local RightCol = Create("Frame", {Parent = PageFrame, Size = UDim2.new(0.48, 0, 1, 0), Position = UDim2.new(0.52, 0, 0, 0), BackgroundTransparency = 1}, {
+        Create("UIListLayout", {Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder})
+    })
+    
+    TabButton.MouseButton1Click:Connect(function()
+        for _, t in pairs(Tabs) do
+            Tween(t.Btn, {TextColor3 = CFG.TextDark, BackgroundColor3 = CFG.MainColor}, 0.2)
+            t.Page.Visible = false
+        end
+        Tween(TabButton, {TextColor3 = CFG.AccentColor, BackgroundColor3 = CFG.SecondaryColor}, 0.2)
+        PageFrame.Visible = true
+        CurrentTab = PageFrame
+    end)
+    
+    table.insert(Tabs, {Btn = TabButton, Page = PageFrame})
+    if #Tabs == 1 then
+        Tween(TabButton, {TextColor3 = CFG.AccentColor, BackgroundColor3 = CFG.SecondaryColor}, 0.2)
+        PageFrame.Visible = true
+    end
+    
+    local GroupFunctions = {}
+    local LeftSide = true
+    
+    function GroupFunctions:Group(title)
+        local ParentCol = LeftSide and LeftCol or RightCol
+        LeftSide = not LeftSide
+        
+        local GroupFrame = Create("Frame", {
+            Parent = ParentCol,
+            Size = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundColor3 = Color3.fromRGB(17, 17, 17),
+            BorderSizePixel = 0
+        }, {
+            Create("UIStroke", {Color = CFG.StrokeColor}),
+            Create("UICorner", {CornerRadius = UDim.new(0, 2)})
+        })
+        
+        Create("Frame", {
+            Parent = GroupFrame,
+            Size = UDim2.new(1, 0, 0, 25),
+            BackgroundColor3 = CFG.SecondaryColor,
+            BorderSizePixel = 0
+        }, {
+            Create("UICorner", {CornerRadius = UDim.new(0, 2)}),
+            Create("Frame", {
+                Size = UDim2.new(1, 0, 0, 5),
+                Position = UDim2.new(0, 0, 1, -5),
+                BackgroundColor3 = CFG.SecondaryColor,
+                BorderSizePixel = 0
+            }),
+            Create("TextLabel", {
+                Text = title,
+                Size = UDim2.new(1, -20, 1, 0),
+                Position = UDim2.new(0, 8, 0, 0),
+                BackgroundTransparency = 1,
+                TextColor3 = CFG.TextColor,
+                Font = Enum.Font.GothamBold,
+                TextSize = 11,
+                TextXAlignment = Enum.TextXAlignment.Left
+            }),
+            Create("Frame", {
+                Size = UDim2.new(0, 4, 0, 4),
+                Position = UDim2.new(1, -10, 0.5, -2),
+                BackgroundColor3 = CFG.AccentColor,
+                BorderSizePixel = 0
+            }, {Create("UICorner", {CornerRadius = UDim.new(1, 0)})})
+        })
+        
+        local Content = Create("Frame", {
+            Parent = GroupFrame,
+            Size = UDim2.new(1, 0, 0, 0),
+            Position = UDim2.new(0, 0, 0, 25),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1
+        }, {
+            Create("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}),
+            Create("UIPadding", {PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8), PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)})
+        })
+        
+        local ItemFuncs = {}
+        
+        function ItemFuncs:Toggle(cfg)
+            local Enabled = false
+            local Frame = Create("TextButton", {
+                Parent = Content,
+                Size = UDim2.new(1, 0, 0, 20),
+                BackgroundTransparency = 1,
+                Text = ""
+            })
+            
+            local Box = Create("Frame", {
+                Parent = Frame,
+                Size = UDim2.new(0, 12, 0, 12),
+                Position = UDim2.new(0, 0, 0.5, -6),
+                BackgroundColor3 = CFG.SecondaryColor,
+                BorderSizePixel = 0
+            }, {Create("UIStroke", {Color = CFG.StrokeColor})})
+            
+            local Check = Create("Frame", {
+                Parent = Box,
+                Size = UDim2.new(1, -4, 1, -4),
+                Position = UDim2.new(0.5, 0, 0.5, 0),
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                BackgroundColor3 = CFG.AccentColor,
+                BackgroundTransparency = 1
+            })
+            
+            local Label = Create("TextLabel", {
+                Parent = Frame,
+                Text = cfg.Name,
+                TextColor3 = CFG.TextDark,
+                TextSize = 11,
+                Font = CFG.Font,
+                BackgroundTransparency = 1,
+                Position = UDim2.new(0, 18, 0, 0),
+                Size = UDim2.new(1, -18, 1, 0),
+                TextXAlignment = Enum.TextXAlignment.Left
+            })
+            
+            if cfg.Risky then
+                Label.TextColor3 = Color3.fromRGB(200, 80, 80)
+            end
+            
+            if cfg.Tooltip then
+                AddTooltip(Frame, cfg.Tooltip)
+            end
+            
+            local function Update()
+                Enabled = not Enabled
+                Tween(Check, {BackgroundTransparency = Enabled and 0 or 1}, 0.1)
+                Tween(Label, {TextColor3 = Enabled and CFG.TextColor or (cfg.Risky and Color3.fromRGB(200, 80, 80) or CFG.TextDark)}, 0.1)
+                if cfg.Callback then
+                    cfg.Callback(Enabled)
+                end
+            end
+            
+            Frame.MouseButton1Click:Connect(Update)
+            
+            return {
+                Set = function(v)
+                    if v ~= Enabled then
+                        Update()
+                    end
+                end
+            }
+        end
+        
+        function ItemFuncs:Slider(cfg)
+            local Value = cfg.Default or cfg.Min
+            local DraggingSlider = false
+            
+            local Frame = Create("Frame", {
+                Parent = Content,
+                Size = UDim2.new(1, 0, 0, 32),
+                BackgroundTransparency = 1
+            })
+            
+            local Label = Create("TextLabel", {
+                Parent = Frame,
+                Text = cfg.Name,
+                TextColor3 = CFG.TextDark,
+                TextSize = 11,
+                Font = CFG.Font,
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 15),
+                TextXAlignment = Enum.TextXAlignment.Left
+            })
+            
+            local ValueLabel = Create("TextLabel", {
+                Parent = Frame,
+                Text = Value .. (cfg.Unit or ""),
+                TextColor3 = CFG.TextDark,
+                TextSize = 11,
+                Font = CFG.Font,
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 15),
+                TextXAlignment = Enum.TextXAlignment.Right
+            })
+            
+            local SliderBG = Create("Frame", {
+                Parent = Frame,
+                Size = UDim2.new(1, 0, 0, 6),
+                Position = UDim2.new(0, 0, 0, 20),
+                BackgroundColor3 = CFG.SecondaryColor,
+                BorderSizePixel = 0
+            }, {
+                Create("UIStroke", {Color = CFG.StrokeColor}),
+                Create("UICorner", {CornerRadius = UDim.new(1, 0)})
+            })
+            
+            local Fill = Create("Frame", {
+                Parent = SliderBG,
+                Size = UDim2.new(0, 0, 1, 0),
+                BackgroundColor3 = CFG.AccentColor
+            }, {Create("UICorner", {CornerRadius = UDim.new(1, 0)})})
+            
+            local function Update(input)
+                local SizeX = SliderBG.AbsoluteSize.X
+                local PosX = SliderBG.AbsolutePosition.X
+                local InputX = input.Position.X
+                local Percent = math.clamp((InputX - PosX) / SizeX, 0, 1)
+                Value = math.floor(cfg.Min + (cfg.Max - cfg.Min) * Percent)
+                Fill.Size = UDim2.new(Percent, 0, 1, 0)
+                ValueLabel.Text = Value .. (cfg.Unit or "")
+                if cfg.Callback then
+                    cfg.Callback(Value)
+                end
+            end
+            
+            Frame.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    DraggingSlider = true
+                    Update(input)
+                end
+            end)
+            
+            UserInputService.InputChanged:Connect(function(input)
+                if DraggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                    Update(input)
+                end
+            end)
+            
+            UserInputService.InputEnded:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    DraggingSlider = false
+                end
+            end)
+            
+            local percent = (Value - cfg.Min) / (cfg.Max - cfg.Min)
+            Fill.Size = UDim2.new(percent, 0, 1, 0)
+            
+            if cfg.Tooltip then
+                AddTooltip(Frame, cfg.Tooltip)
+            end
+        end
+        
+        function ItemFuncs:Dropdown(cfg)
+            local Expanded = false
+            local Current = cfg.Default or cfg.Options[1]
+            
+            local Frame = Create("Frame", {
+                Parent = Content,
+                Size = UDim2.new(1, 0, 0, 36),
+                BackgroundTransparency = 1,
+                ZIndex = 20
+            })
+            
+            Create("TextLabel", {
+                Parent = Frame,
+                Text = cfg.Name,
+                TextColor3 = CFG.TextDark,
+                TextSize = 11,
+                Font = CFG.Font,
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 15),
+                TextXAlignment = Enum.TextXAlignment.Left
+            })
+            
+            local MainBox = Create("TextButton", {
+                Parent = Frame,
+                Size = UDim2.new(1, 0, 0, 20),
+                Position = UDim2.new(0, 0, 0, 16),
+                BackgroundColor3 = CFG.SecondaryColor,
+                BorderSizePixel = 0,
+                Text = "",
+                AutoButtonColor = false
+            }, {
+                Create("UIStroke", {Color = CFG.StrokeColor}),
+                Create("UICorner", {CornerRadius = UDim.new(0, 3)}),
+                Create("TextLabel", {
+                    Name = "Val",
+                    Text = Current,
+                    Size = UDim2.new(1, -20, 1, 0),
+                    Position = UDim2.new(0, 5, 0, 0),
+                    BackgroundTransparency = 1,
+                    TextColor3 = CFG.TextColor,
+                    TextSize = 11,
+                    Font = CFG.Font,
+                    TextXAlignment = Enum.TextXAlignment.Left
+                }),
+                Create("TextLabel", {
+                    Text = "▼",
+                    Size = UDim2.new(0, 20, 1, 0),
+                    Position = UDim2.new(1, -20, 0, 0),
+                    BackgroundTransparency = 1,
+                    TextColor3 = CFG.TextDark,
+                    TextSize = 10
+                })
+            })
+            
+            local ListFrame = Create("ScrollingFrame", {
+                Parent = MainBox,
+                Size = UDim2.new(1, 0, 0, 0),
+                Position = UDim2.new(0, 0, 1, 2),
+                BackgroundColor3 = CFG.SecondaryColor,
+                BorderSizePixel = 0,
+                Visible = false,
+                ZIndex = 50,
+                CanvasSize = UDim2.new(0, 0, 0, 0),
+                AutomaticCanvasSize = Enum.AutomaticSize.Y,
+                ScrollBarThickness = 2
+            }, {
+                Create("UIStroke", {Color = CFG.StrokeColor}),
+                Create("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder}),
+                Create("UICorner", {CornerRadius = UDim.new(0, 3)})
+            })
+            
+            for _, opt in pairs(cfg.Options) do
+                local Btn = Create("TextButton", {
+                    Parent = ListFrame,
+                    Size = UDim2.new(1, 0, 0, 20),
+                    BackgroundTransparency = 1,
+                    Text = opt,
+                    TextColor3 = (opt == Current) and CFG.AccentColor or CFG.TextDark,
+                    TextSize = 11,
+                    Font = CFG.Font
+                })
+                
+                Btn.MouseButton1Click:Connect(function()
+                    Current = opt
+                    MainBox.Val.Text = opt
+                    if cfg.Callback then
+                        cfg.Callback(opt)
+                    end
+                    Expanded = false
+                    Tween(ListFrame, {Size = UDim2.new(1, 0, 0, 0)}, 0.1)
+                    task.wait(0.1)
+                    ListFrame.Visible = false
+                end)
+            end
+            
+            MainBox.MouseButton1Click:Connect(function()
+                Expanded = not Expanded
+                if Expanded then
+                    ListFrame.Visible = true
+                    Tween(ListFrame, {Size = UDim2.new(1, 0, 0, math.min(#cfg.Options * 20, 100))}, 0.1)
+                else
+                    Tween(ListFrame, {Size = UDim2.new(1, 0, 0, 0)}, 0.1)
+                    task.wait(0.1)
+                    ListFrame.Visible = false
+                end
+            end)
+            
+            if cfg.Tooltip then
+                AddTooltip(Frame, cfg.Tooltip)
+            end
+        end
+        
+        function ItemFuncs:ColorPicker(cfg)
+            local Color = cfg.Default or Color3.fromRGB(255, 255, 255)
+            local Opened = false
+            
+            local Frame = Create("Frame", {
+                Parent = Content,
+                Size = UDim2.new(1, 0, 0, 20),
+                BackgroundTransparency = 1,
+                ZIndex = 15
+            })
+            
+            Create("TextLabel", {
+                Parent = Frame,
+                Text = cfg.Name,
+                TextColor3 = CFG.TextDark,
+                TextSize = 11,
+                Font = CFG.Font,
+                BackgroundTransparency = 1,
+                Size = UDim2.new(0.6, 0, 1, 0),
+                TextXAlignment = Enum.TextXAlignment.Left
+            })
+            
+            local Preview = Create("TextButton", {
+                Parent = Frame,
+                Size = UDim2.new(0, 30, 0, 14),
+                AnchorPoint = Vector2.new(1, 0.5),
+                Position = UDim2.new(1, 0, 0.5, 0),
+                BackgroundColor3 = Color,
+                Text = "",
+                AutoButtonColor = false
+            }, {
+                Create("UIStroke", {Color = CFG.StrokeColor}),
+                Create("UICorner", {CornerRadius = UDim.new(0, 3)})
+            })
+            
+            local PickerFrame = Create("Frame", {
+                Parent = Preview,
+                Size = UDim2.new(0, 180, 0, 0),
+                Position = UDim2.new(1, 0, 1, 5),
+                AnchorPoint = Vector2.new(1, 0),
+                BackgroundColor3 = CFG.MainColor,
+                BorderSizePixel = 0,
+                ClipsDescendants = true,
+                ZIndex = 60
+            }, {
+                Create("UIStroke", {Color = CFG.StrokeColor}),
+                Create("UICorner", {CornerRadius = UDim.new(0, 3)})
+            })
+            
+            local SatValPanel = Create("TextButton", {
+                Parent = PickerFrame,
+                Size = UDim2.new(1, -20, 0, 100),
+                Position = UDim2.new(0, 10, 0, 10),
+                BackgroundColor3 = Color3.fromHSV(0, 1, 1),
+                Text = "",
+                AutoButtonColor = false
+            }, {
+                Create("ImageLabel", {
+                    Size = UDim2.new(1, 0, 1, 0),
+                    BackgroundTransparency = 1,
+                    Image = "rbxassetid://4801885019"
+                }),
+                Create("ImageLabel", {
+                    Size = UDim2.new(1, 0, 1, 0),
+                    BackgroundTransparency = 1,
+                    Image = "rbxassetid://4801885019",
+                    ImageColor3 = Color3.new(0,0,0),
+                    Rotation = 90
+                })
+            })
+            
+            local Cursor = Create("Frame", {
+                Parent = SatValPanel,
+                Size = UDim2.new(0, 4, 0, 4),
+                BackgroundColor3 = Color3.new(1,1,1),
+                AnchorPoint = Vector2.new(0.5, 0.5)
+            }, {Create("UICorner", {CornerRadius = UDim.new(1, 0)})})
+            
+            local HueSlider = Create("TextButton", {
+                Parent = PickerFrame,
+                Size = UDim2.new(1, -20, 0, 10),
+                Position = UDim2.new(0, 10, 0, 120),
+                Text = "",
+                AutoButtonColor = false
+            }, {
+                Create("UIGradient", {
+                    Color = ColorSequence.new({
+                        ColorSequenceKeypoint.new(0, Color3.fromHSV(0,1,1)),
+                        ColorSequenceKeypoint.new(0.17, Color3.fromHSV(0.17,1,1)),
+                        ColorSequenceKeypoint.new(0.33, Color3.fromHSV(0.33,1,1)),
+                        ColorSequenceKeypoint.new(0.5, Color3.fromHSV(0.5,1,1)),
+                        ColorSequenceKeypoint.new(0.67, Color3.fromHSV(0.67,1,1)),
+                        ColorSequenceKeypoint.new(0.83, Color3.fromHSV(0.83,1,1)),
+                        ColorSequenceKeypoint.new(1, Color3.fromHSV(1,1,1))
+                    })
+                }),
+                Create("UICorner", {CornerRadius = UDim.new(0, 2)})
+            })
+            
+            local H, S, V = 0, 1, 1
+            local DraggingHSV, DraggingHue = false, false
+            
+            local function UpdateColor()
+                Color = Color3.fromHSV(H, S, V)
+                Preview.BackgroundColor3 = Color
+                SatValPanel.BackgroundColor3 = Color3.fromHSV(H, 1, 1)
+                Cursor.Position = UDim2.new(S, 0, 1 - V, 0)
+                if cfg.Callback then
+                    cfg.Callback(Color)
+                end
+            end
+            
+            SatValPanel.InputBegan:Connect(function(inp)
+                if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+                    DraggingHSV = true
+                end
+            end)
+            
+            HueSlider.InputBegan:Connect(function(inp)
+                if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+                    DraggingHue = true
+                end
+            end)
+            
+            UserInputService.InputEnded:Connect(function(inp)
+                if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+                    DraggingHSV = false; DraggingHue = false
+                end
+            end)
+            
+            UserInputService.InputChanged:Connect(function(inp)
+                if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then
+                    if DraggingHSV then
+                        local size = SatValPanel.AbsoluteSize
+                        local pos = SatValPanel.AbsolutePosition
+                        local x = math.clamp((inp.Position.X - pos.X) / size.X, 0, 1)
+                        local y = math.clamp((inp.Position.Y - pos.Y) / size.Y, 0, 1)
+                        S = x
+                        V = 1 - y
+                        UpdateColor()
+                    elseif DraggingHue then
+                        local size = HueSlider.AbsoluteSize
+                        local pos = HueSlider.AbsolutePosition
+                        local x = math.clamp((inp.Position.X - pos.X) / size.X, 0, 1)
+                        H = x
+                        UpdateColor()
+                    end
+                end
+            end)
+            
+            Preview.MouseButton1Click:Connect(function()
+                Opened = not Opened
+                if Opened then
+                    Tween(PickerFrame, {Size = UDim2.new(0, 180, 0, 170)}, 0.2)
+                else
+                    Tween(PickerFrame, {Size = UDim2.new(0, 180, 0, 0)}, 0.2)
+                end
+            end)
+            
+            if cfg.Tooltip then
+                AddTooltip(Frame, cfg.Tooltip)
+            end
+        end
+        
+        function ItemFuncs:Textbox(cfg)
+            local Frame = Create("Frame", {
+                Parent = Content,
+                Size = UDim2.new(1, 0, 0, 35),
+                BackgroundTransparency = 1
+            })
+            
+            Create("TextLabel", {
+                Parent = Frame,
+                Text = cfg.Name,
+                TextColor3 = CFG.TextDark,
+                TextSize = 11,
+                Font = CFG.Font,
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 15),
+                TextXAlignment = Enum.TextXAlignment.Left
+            })
+            
+            local Box = Create("TextBox", {
+                Parent = Frame,
+                Size = UDim2.new(1, 0, 0, 20),
+                Position = UDim2.new(0, 0, 0, 15),
+                BackgroundColor3 = CFG.SecondaryColor,
+                TextColor3 = CFG.TextColor,
+                PlaceholderText = cfg.Placeholder or "...",
+                Text = "",
+                Font = CFG.Font,
+                TextSize = 11,
+                BorderSizePixel = 0
+            }, {
+                Create("UIStroke", {Color = CFG.StrokeColor}),
+                Create("UICorner", {CornerRadius = UDim.new(0, 3)}),
+                Create("UIPadding", {PaddingLeft = UDim.new(0, 5)})
+            })
+            
+            Box.FocusLost:Connect(function()
+                if cfg.Callback then
+                    cfg.Callback(Box.Text)
+                end
+            end)
+            
+            if cfg.Tooltip then
+                AddTooltip(Frame, cfg.Tooltip)
+            end
+        end
+        
+        function ItemFuncs:Keybind(cfg)
+            local Key = cfg.Default or Enum.KeyCode.Insert
+            local Waiting = false
+            
+            local Frame = Create("Frame", {
+                Parent = Content,
+                Size = UDim2.new(1, 0, 0, 20),
+                BackgroundTransparency = 1
+            })
+            
+            Create("TextLabel", {
+                Parent = Frame,
+                Text = cfg.Name,
+                TextColor3 = CFG.TextDark,
+                TextSize = 11,
+                Font = CFG.Font,
+                BackgroundTransparency = 1,
+                Size = UDim2.new(0.6, 0, 1, 0),
+                TextXAlignment = Enum.TextXAlignment.Left
+            })
+            
+            local Btn = Create("TextButton", {
+                Parent = Frame,
+                Size = UDim2.new(0, 60, 1, 0),
+                AnchorPoint = Vector2.new(1, 0),
+                Position = UDim2.new(1, 0, 0, 0),
+                BackgroundColor3 = CFG.SecondaryColor,
+                Text = Key.Name,
+                TextColor3 = CFG.TextDark,
+                TextSize = 10,
+                Font = CFG.Font
+            }, {
+                Create("UIStroke", {Color = CFG.StrokeColor}),
+                Create("UICorner", {CornerRadius = UDim.new(0, 3)})
+            })
+            
+            Btn.MouseButton1Click:Connect(function()
+                Waiting = true
+                Btn.Text = "..."
+                Btn.TextColor3 = CFG.AccentColor
+            end)
+            
+            UserInputService.InputBegan:Connect(function(inp)
+                if Waiting and inp.UserInputType == Enum.UserInputType.Keyboard then
+                    Waiting = false
+                    Key = inp.KeyCode
+                    Btn.Text = Key.Name
+                    Btn.TextColor3 = CFG.TextDark
+                    if cfg.Callback then
+                        cfg.Callback(Key)
+                    end
+                end
+            end)
+            
+            if cfg.Tooltip then
+                AddTooltip(Frame, cfg.Tooltip)
+            end
+        end
+        
+        function ItemFuncs:Button(cfg)
+            local Btn = Create("TextButton", {
+                Parent = Content,
+                Size = UDim2.new(1, 0, 0, 22),
+                BackgroundColor3 = CFG.SecondaryColor,
+                Text = cfg.Name,
+                TextColor3 = CFG.TextDark,
+                Font = Enum.Font.GothamBold,
+                TextSize = 10
+            }, {
+                Create("UIStroke", {Color = CFG.StrokeColor}),
+                Create("UICorner", {CornerRadius = UDim.new(0, 3)})
+            })
+            
+            if cfg.Variant == "Primary" then
+                Btn.BackgroundColor3 = CFG.AccentColor
+                Btn.TextColor3 = Color3.new(0,0,0)
+            elseif cfg.Variant == "Danger" then
+                Btn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+                Btn.TextColor3 = Color3.new(0,0,0)
+            end
+            
+            Btn.MouseButton1Click:Connect(function()
+                if cfg.Callback then
+                    cfg.Callback()
+                end
+            end)
+            
+            if cfg.Tooltip then
+                AddTooltip(Btn, cfg.Tooltip)
+            end
+        end
+        
+        return ItemFuncs
+    end
+    
+    return GroupFunctions
+end
+
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local Teams = game:GetService("Teams")
+local LocalPlayer = Players.LocalPlayer
+local CurrentCamera = Workspace.CurrentCamera
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Prediction = 0.188259
+local HorizontalPrediction = 0.14664
+local VerticalPrediction = 0.07
+local XPrediction = 0.14664
+local YPrediction = 0.07
+
+local DaHoodSettings = {
+    SilentAim = false,
+    WallCheck = false,
+    FOV = 100,
+    CamlockEnabled = false,
+    AutoAir = false,
+    TargetNPCs = false,
+    AutoShoot = false,
+    TargetPart = "Head",
+    ShowChams = false,
+    ShowTracer = false,
+    ShowNameESP = false,
+    TriggerBotEnabled = false,
+    TriggerBotPrediction = 0.09,
+    CamlockPrediction = 0.1475,
+    SilentPrediction = 0.124,
+    JumpCheck = -0.92,
+    FallCheck = -1.91
+}
+
+DaHoodSettings.CamlockPrediction = getgenv().Vepar.Camlock.Prediction
+DaHoodSettings.SilentPrediction = getgenv().Vepar.Silent.FOV.Prediction
+DaHoodSettings.JumpCheck = getgenv().Vepar.JumpCheck.Jump
+DaHoodSettings.FallCheck = getgenv().Vepar.JumpCheck.Fall
+
+local Aimlock = {
+    Enabled = false,
+    Prediction = 0.188259,
+    HorizontalPrediction = 0.14664,
+    VerticalPrediction = 0.07,
+    XPrediction = 0.14664,
+    YPrediction = 0.07,
+    CurrentTarget = nil,
+    IsLocked = false,
+    HasSearchedForTarget = false
+}
+
+local Aiming = {
+    FOV = 100,
+    CurrentTarget = nil,
+    Prediction = 0.1475,
+    HorizontalPrediction = 0.14664,
+    VerticalPrediction = 0.07,
+    XPrediction = 0.14664,
+    YPrediction = 0.07,
+    HasSearchedForTarget = false
+}
+
+local Visuals = {
+    ChamsEnabled = false,
+    TracerEnabled = false,
+    NameESPEnabled = false,
+    ChamsFolder = nil,
+    TracerLine = nil,
+    NameESP = nil,
+    LastTargetCharacter = nil
+}
+
+local LastAirActivation = 0
+local AirActivationCooldown = 0.05
+local IsAutoAirActive = false
+local IsCamlockAutoAirActive = false
+local toolActivated = false
+
+local AutoShootActive = false
+local LastAutoShootCheck = 0
+local AutoShootCooldown = 0.1
+
+local TriggerBotLastActivation = 0
+local TriggerBotActivationDelay = 0.1
+
+local BlacklistedTools = {
+    "Knife"
+}
+
+local function isCharacterAlive(character)
+    if not character then return false end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+    return humanoid.Health > 0 and humanoid:GetState() ~= Enum.HumanoidStateType.Dead
+end
+
+local function isLocalPlayerAlive()
+    if not LocalPlayer.Character then return false end
+    return isCharacterAlive(LocalPlayer.Character)
+end
+
+local function isTargetValid(targetPart)
+    if not targetPart then return false end
+    local character = targetPart.Parent
+    if not character then return false end
+    if not isLocalPlayerAlive() then return false end
+    local player = Players:GetPlayerFromCharacter(character)
+    if player then
+        return isCharacterAlive(character) and targetPart:IsDescendantOf(Workspace)
+    else
+        return DaHoodSettings.TargetNPCs and isCharacterAlive(character) and targetPart:IsDescendantOf(Workspace)
+    end
+    return false
+end
+
+local function findNPCBots()
+    local npcs = {}
+    local botsFolder = Workspace:FindFirstChild("Bots")
+    if botsFolder then
+        for _, bot in pairs(botsFolder:GetChildren()) do
+            if bot:IsA("Model") and bot.Name == "Bot_1" then
+                table.insert(npcs, bot)
+            end
+        end
+    end
+    for _, obj in pairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") and obj.Name == "Bot_1" then
+            local isPlayer = false
+            for _, player in pairs(Players:GetPlayers()) do
+                if player.Character == obj then
+                    isPlayer = true
+                    break
+                end
+            end
+            if not isPlayer then
+                table.insert(npcs, obj)
+            end
+        end
+    end
+    return npcs
+end
+
+local function getTargetPart(character)
+    if not character then return nil end
+    local targetPart = character:FindFirstChild(DaHoodSettings.TargetPart)
+    if targetPart and targetPart:IsA("BasePart") then
+        return targetPart
+    end
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if humanoidRootPart then
+        return humanoidRootPart
+    end
+    local head = character:FindFirstChild("Head")
+    if head then
+        return head
+    end
+    return nil
+end
+
+local function isVisible(targetPart)
+    if not DaHoodSettings.WallCheck then return true end
+    local character = LocalPlayer.Character
+    if not character then return false end
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return false end
+    local origin = CurrentCamera.CFrame.Position
+    local targetPos = targetPart.Position
+    local direction = (targetPos - origin).Unit
+    local distance = (targetPos - origin).Magnitude
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {character, targetPart.Parent}
+    local raycastResult = Workspace:Raycast(origin, direction * distance, raycastParams)
+    return raycastResult == nil
+end
+
+function getNearestPlayer()
+    local ClosestDistance = math.huge
+    local ClosestPlayer = nil
+    local CenterPosition = Vector2.new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y / 2)
+    
+    if not isLocalPlayerAlive() then return nil end
+    
+    for _, Player in ipairs(Players:GetPlayers()) do
         if Player ~= LocalPlayer then
             local Character = Player.Character
-            if Character and Character:FindFirstChild("HumanoidRootPart") and Character.Humanoid.Health > 0 then
-                local Position, IsVisibleOnViewport = camera:WorldToViewportPoint(Character.HumanoidRootPart.Position)
-                
-                if IsVisibleOnViewport then
-                    -- Raycast to check if actually visible (not through walls)
-                    local ray = Ray.new(camera.CFrame.Position, (Character.HumanoidRootPart.Position - camera.CFrame.Position).Unit * (camera.CFrame.Position - Character.HumanoidRootPart.Position).Magnitude)
-                    local part, hitPosition = workspace:FindPartOnRay(ray, LocalPlayer.Character, false, true)
-                    
-                    -- If we hit the target's character or nothing (no wall), it's visible
-                    if part == nil or part:IsDescendantOf(Character) then
-                        local Distance = (CenterPosition - Vector2.new(Position.X, Position.Y)).Magnitude
+            if Character and isCharacterAlive(Character) then
+                local targetPart = getTargetPart(Character)
+                if targetPart then
+                    local Position, IsVisibleOnViewport = CurrentCamera:WorldToViewportPoint(targetPart.Position)
+                    if IsVisibleOnViewport then
+                        local screenPos = Vector2.new(Position.X, Position.Y)
+                        local Distance = (CenterPosition - screenPos).Magnitude
                         if Distance < ClosestDistance then
-                            ClosestPlayer = Character.HumanoidRootPart
-                            ClosestDistance = Distance
+                            if not DaHoodSettings.WallCheck or isVisible(targetPart) then
+                                ClosestPlayer = targetPart
+                                ClosestDistance = Distance
+                            end
                         end
                     end
                 end
             end
         end
     end
+    
+    if DaHoodSettings.TargetNPCs then
+        local npcBots = findNPCBots()
+        for _, npc in pairs(npcBots) do
+            if isCharacterAlive(npc) then
+                local targetPart = getTargetPart(npc)
+                if targetPart then
+                    local Position, IsVisibleOnViewport = CurrentCamera:WorldToViewportPoint(targetPart.Position)
+                    if IsVisibleOnViewport then
+                        local screenPos = Vector2.new(Position.X, Position.Y)
+                        local Distance = (CenterPosition - screenPos).Magnitude
+                        if Distance < ClosestDistance then
+                            if not DaHoodSettings.WallCheck or isVisible(targetPart) then
+                                ClosestPlayer = targetPart
+                                ClosestDistance = Distance
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
     return ClosestPlayer
 end
 
-local enemy = nil
-local noTargetFound = false
-
--- Function to aim the camera at the nearest enemy's HumanoidRootPart
-RunService.Heartbeat:Connect(function()
-    if CamlockState == true and not noTargetFound then
-        if enemy then
-            local camera = workspace.CurrentCamera
-            local targetCFrame = CFrame.new(camera.CFrame.p, enemy.Position + enemy.Velocity * Prediction)
-            if SmoothEnabled then
-                camera.CFrame = camera.CFrame:Lerp(targetCFrame, Smoothness)
-            else
-                camera.CFrame = targetCFrame
+function FindNearestEnemy()
+    local ClosestDistance = math.huge
+    local ClosestPlayer = nil
+    local CenterPosition = Vector2.new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y / 2)
+    
+    if not isLocalPlayerAlive() then return nil end
+    
+    for _, Player in ipairs(Players:GetPlayers()) do
+        if Player ~= LocalPlayer then
+            local Character = Player.Character
+            if Character and isCharacterAlive(Character) then
+                local targetPart = getTargetPart(Character)
+                if targetPart then
+                    local Position, IsVisibleOnViewport = CurrentCamera:WorldToViewportPoint(targetPart.Position)
+                    if IsVisibleOnViewport then
+                        local screenPos = Vector2.new(Position.X, Position.Y)
+                        local Distance = (CenterPosition - screenPos).Magnitude
+                        if Distance < ClosestDistance and Distance <= Aiming.FOV then
+                            if not DaHoodSettings.WallCheck or isVisible(targetPart) then
+                                ClosestPlayer = targetPart
+                                ClosestDistance = Distance
+                            end
+                        end
+                    end
+                end
             end
         end
     end
-end)
-
--- Update enemy target every frame to ensure only visible targets
-RunService.RenderStepped:Connect(function()
-    if CamlockState and not noTargetFound then
-        local newEnemy = FindNearestEnemy()
-        if newEnemy then
-            enemy = newEnemy
-        else
-            -- No target found, set flag to stop tracking and require restart
-            noTargetFound = true
-            enemy = nil
-            -- Keep button text normal
-            if TextButton then
-                TextButton.Text = "MIST ON"
+    
+    if DaHoodSettings.TargetNPCs then
+        local npcBots = findNPCBots()
+        for _, npc in pairs(npcBots) do
+            if isCharacterAlive(npc) then
+                local targetPart = getTargetPart(npc)
+                if targetPart then
+                    local Position, IsVisibleOnViewport = CurrentCamera:WorldToViewportPoint(targetPart.Position)
+                    if IsVisibleOnViewport then
+                        local screenPos = Vector2.new(Position.X, Position.Y)
+                        local Distance = (CenterPosition - screenPos).Magnitude
+                        if Distance < ClosestDistance and Distance <= Aiming.FOV then
+                            if not DaHoodSettings.WallCheck or isVisible(targetPart) then
+                                ClosestPlayer = targetPart
+                                ClosestDistance = Distance
+                            end
+                        end
+                    end
+                end
             end
         end
     end
-end)
+    
+    return ClosestPlayer
+end
 
-local Wowo = Instance.new("ScreenGui")
-Wowo.Name = "Wowo"
-Wowo.Parent = game.CoreGui
-Wowo.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-local CamlockFrame = Instance.new("Frame")
-CamlockFrame.Parent = Wowo
-CamlockFrame.BackgroundTransparency = 0.35
-CamlockFrame.Position = UDim2.new(0.5, -50, 0.5, -25)
-CamlockFrame.Size = UDim2.new(0.2, 0, 0.2, 0)
-CamlockFrame.BackgroundColor3 = Color3.new(0, 0, 0)
-CamlockFrame.Active = true
-CamlockFrame.Draggable = true
-
-local cornerCamlock = Instance.new("UICorner")
-cornerCamlock.CornerRadius = UDim.new(0, 10)
-cornerCamlock.Parent = CamlockFrame
-
-local outline = Instance.new("UIStroke")
-outline.Parent = CamlockFrame
-outline.Color = Color3.fromRGB(255, 255, 255)
-outline.Thickness = 2
-
-local TextButton = Instance.new("TextButton")
-TextButton.Parent = CamlockFrame
-TextButton.Size = UDim2.new(0, 150, 0, 44)
-TextButton.BackgroundTransparency = 1
-TextButton.Text = "Toggle Mist"
-TextButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-TextButton.Font = Enum.Font.Gotham
-TextButton.TextScaled = true
-TextButton.TextSize = 14
-TextButton.TextWrapped = true
-TextButton.Position = UDim2.new(0.5, -75, 0.5, -22)
-
-local state = true
-TextButton.MouseButton1Click:Connect(function()
-    state = not state
-    if not state then
-        TextButton.Text = "MIST ON"
-        getgenv().SilentAimEnabled = true
-        CamlockState = true
-        noTargetFound = false -- Reset no target flag
-        enemy = FindNearestEnemy()
-        if enemy then
-            Air.Parent = true
-            enabled = true
-            Plr = LockToPlayer()
-        else
-            -- If no target found immediately, set flag
-            noTargetFound = true
-            TextButton.Text = "MIST ON"
-        end
+function getPredictedPosition(targetPart, predictionType)
+    if not targetPart then return nil end
+    local character = targetPart.Parent
+    if not character then return targetPart.Position end
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return targetPart.Position end
+    local targetVelocity = humanoidRootPart.Velocity
+    local cameraPosition = CurrentCamera.CFrame.Position
+    local targetPosition = humanoidRootPart.Position
+    local distance = (targetPosition - cameraPosition).Magnitude
+    local baseTravelTime = distance / 1200
+    local adjustedTravelTime = baseTravelTime * 1.2
+    
+    local predValue
+    if predictionType == "camlock" then
+        predValue = DaHoodSettings.CamlockPrediction
+    elseif predictionType == "silent" then
+        predValue = DaHoodSettings.SilentPrediction
     else
-        TextButton.Text = "MIST OFF"
-        getgenv().SilentAimEnabled = false
-        CamlockState = false
-        enabled = false
-        noTargetFound = false
-        if AutoAir then
-            AirMaterial(Material.Auto.Air)
-            Airshot = nil
-            enemyair = nil
+        predValue = Aimlock.Prediction
+    end
+    
+    local predictedPosition = targetPosition + (targetVelocity * predValue * adjustedTravelTime) + 
+                              (Vector3.new(targetVelocity.X, 0, targetVelocity.Z) * HorizontalPrediction * adjustedTravelTime) + 
+                              (Vector3.new(0, targetVelocity.Y, 0) * VerticalPrediction * adjustedTravelTime) + 
+                              (Vector3.new(targetVelocity.X, 0, 0) * XPrediction * adjustedTravelTime) + 
+                              (Vector3.new(0, targetVelocity.Y, 0) * YPrediction * adjustedTravelTime)
+    
+    if targetVelocity.Y < -5 then
+        predictedPosition = predictedPosition + Vector3.new(0, targetVelocity.Y * 0.05, 0)
+    end
+    return predictedPosition
+end
+
+local MobileCursor = nil
+local function getMobileCursor()
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+    local home = playerGui:WaitForChild("Home")
+    local hud = home:WaitForChild("hud")
+    local mobileGunFrame = hud:WaitForChild("MobileGunFrame")
+    return mobileGunFrame:WaitForChild("MobileCursor")
+end
+
+local FOVContainerFull = Create("Frame", {
+    Name = "FOVContainerFull",
+    Parent = ScreenGui,
+    Size = UDim2.new(1, 0, 1, 0),
+    Position = UDim2.new(0, 0, 0, 0),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ZIndex = 5
+})
+
+local FOVCircle = Create("Frame", {
+    Name = "FOVCircle",
+    Parent = FOVContainerFull,
+    Size = UDim2.new(0, 200, 0, 200),
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    Position = UDim2.new(0.5, 0, 0.5, 0),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ZIndex = 10,
+    Visible = false
+}, {
+    Create("UIStroke", {
+        Thickness = 2,
+        Color = Color3.fromRGB(255, 255, 255),
+        LineJoinMode = Enum.LineJoinMode.Round
+    }),
+    Create("UICorner", {CornerRadius = UDim.new(1, 0)})
+})
+
+local CamlockFrame = Create("Frame", {
+    Name = "CamlockFrame",
+    Parent = ScreenGui,
+    Size = UDim2.new(0, 120, 0, 70),
+    Position = UDim2.new(0.5, -60, 0.1, 0),
+    BackgroundColor3 = CFG.MainColor,
+    BorderSizePixel = 0,
+    ZIndex = 20,
+    Visible = false
+}, {
+    Create("UICorner", {CornerRadius = UDim.new(0, 8)}),
+    Create("UIStroke", {Thickness = 2, Color = CFG.StrokeColor}),
+    Create("TextLabel", {
+        Name = "TopLabel",
+        Size = UDim2.new(1, 0, 0.3, 0),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = 1,
+        TextColor3 = CFG.TextColor,
+        Text = "Camlock",
+        Font = Enum.Font.Gotham,
+        TextSize = 12,
+        ZIndex = 21
+    }),
+    Create("TextButton", {
+        Name = "Button",
+        Size = UDim2.new(0.8, 0, 0.5, 0),
+        Position = UDim2.new(0.1, 0, 0.35, 0),
+        BackgroundColor3 = Color3.fromRGB(160, 80, 80),
+        TextColor3 = CFG.TextColor,
+        Text = "OFF",
+        Font = Enum.Font.GothamBold,
+        TextSize = 14,
+        BorderSizePixel = 0,
+        ZIndex = 21
+    }, {Create("UICorner", {CornerRadius = UDim.new(0, 6)})}),
+    Create("TextLabel", {
+        Name = "BottomLabel",
+        Size = UDim2.new(1, 0, 0.2, 0),
+        Position = UDim2.new(0, 0, 0.85, 0),
+        BackgroundTransparency = 1,
+        TextColor3 = CFG.TextColor,
+        Text = ".gg/flexed",
+        Font = Enum.Font.Gotham,
+        TextSize = 10,
+        ZIndex = 21
+    })
+})
+
+local AutoShootFrame = Create("Frame", {
+    Name = "AutoShootFrame",
+    Parent = ScreenGui,
+    Size = UDim2.new(0, 120, 0, 70),
+    Position = UDim2.new(0.5, -60, 0.2, 0),
+    BackgroundColor3 = CFG.MainColor,
+    BorderSizePixel = 0,
+    ZIndex = 20,
+    Visible = false
+}, {
+    Create("UICorner", {CornerRadius = UDim.new(0, 8)}),
+    Create("UIStroke", {Thickness = 2, Color = CFG.StrokeColor}),
+    Create("TextLabel", {
+        Name = "TopLabel",
+        Size = UDim2.new(1, 0, 0.3, 0),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = 1,
+        TextColor3 = CFG.TextColor,
+        Text = "AutoShoot",
+        Font = Enum.Font.Gotham,
+        TextSize = 12,
+        ZIndex = 21
+    }),
+    Create("TextButton", {
+        Name = "Button",
+        Size = UDim2.new(0.8, 0, 0.5, 0),
+        Position = UDim2.new(0.1, 0, 0.35, 0),
+        BackgroundColor3 = Color3.fromRGB(160, 80, 80),
+        TextColor3 = CFG.TextColor,
+        Text = "OFF",
+        Font = Enum.Font.GothamBold,
+        TextSize = 14,
+        BorderSizePixel = 0,
+        ZIndex = 21
+    }, {Create("UICorner", {CornerRadius = UDim.new(0, 6)})}),
+    Create("TextLabel", {
+        Name = "BottomLabel",
+        Size = UDim2.new(1, 0, 0.2, 0),
+        Position = UDim2.new(0, 0, 0.85, 0),
+        BackgroundTransparency = 1,
+        TextColor3 = CFG.TextColor,
+        Text = ".gg/flexed",
+        Font = Enum.Font.Gotham,
+        TextSize = 10,
+        ZIndex = 21
+    })
+})
+
+local AimlockFrame = Create("Frame", {
+    Name = "AimlockFrame",
+    Parent = ScreenGui,
+    Size = UDim2.new(0, 120, 0, 70),
+    Position = UDim2.new(0.5, -60, 0.3, 0),
+    BackgroundColor3 = CFG.MainColor,
+    BorderSizePixel = 0,
+    ZIndex = 20,
+    Visible = false,
+    Active = true,
+    Draggable = true
+}, {
+    Create("UICorner", {CornerRadius = UDim.new(0, 8)}),
+    Create("UIStroke", {Thickness = 2, Color = CFG.StrokeColor}),
+    Create("TextLabel", {
+        Name = "TopLabel",
+        Size = UDim2.new(1, 0, 0.3, 0),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = 1,
+        TextColor3 = CFG.TextColor,
+        Text = "Aimlock",
+        Font = Enum.Font.Gotham,
+        TextSize = 12,
+        ZIndex = 21
+    }),
+    Create("TextButton", {
+        Name = "Button",
+        Size = UDim2.new(0.8, 0, 0.5, 0),
+        Position = UDim2.new(0.1, 0, 0.35, 0),
+        BackgroundColor3 = Color3.fromRGB(160, 80, 80),
+        TextColor3 = CFG.TextColor,
+        Text = "OFF",
+        Font = Enum.Font.GothamBold,
+        TextSize = 14,
+        BorderSizePixel = 0,
+        ZIndex = 21
+    }, {Create("UICorner", {CornerRadius = UDim.new(0, 6)})}),
+    Create("TextLabel", {
+        Name = "BottomLabel",
+        Size = UDim2.new(1, 0, 0.2, 0),
+        Position = UDim2.new(0, 0, 0.85, 0),
+        BackgroundTransparency = 1,
+        TextColor3 = CFG.TextColor,
+        Text = ".gg/flexed",
+        Font = Enum.Font.Gotham,
+        TextSize = 10,
+        ZIndex = 21
+    })
+})
+
+local AutoAirFrame = Create("Frame", {
+    Name = "AutoAirFrame",
+    Parent = ScreenGui,
+    Size = UDim2.new(0, 120, 0, 70),
+    Position = UDim2.new(0.5, -60, 0.4, 0),
+    BackgroundColor3 = CFG.MainColor,
+    BorderSizePixel = 0,
+    ZIndex = 20,
+    Visible = false,
+    Active = true,
+    Draggable = true
+}, {
+    Create("UICorner", {CornerRadius = UDim.new(0, 8)}),
+    Create("UIStroke", {Thickness = 2, Color = CFG.StrokeColor}),
+    Create("TextLabel", {
+        Name = "TopLabel",
+        Size = UDim2.new(1, 0, 0.3, 0),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = 1,
+        TextColor3 = CFG.TextColor,
+        Text = "Auto Air",
+        Font = Enum.Font.Gotham,
+        TextSize = 12,
+        ZIndex = 21
+    }),
+    Create("TextButton", {
+        Name = "Button",
+        Size = UDim2.new(0.8, 0, 0.5, 0),
+        Position = UDim2.new(0.1, 0, 0.35, 0),
+        BackgroundColor3 = Color3.fromRGB(160, 80, 80),
+        TextColor3 = CFG.TextColor,
+        Text = "OFF",
+        Font = Enum.Font.GothamBold,
+        TextSize = 14,
+        BorderSizePixel = 0,
+        ZIndex = 21
+    }, {Create("UICorner", {CornerRadius = UDim.new(0, 6)})}),
+    Create("TextLabel", {
+        Name = "BottomLabel",
+        Size = UDim2.new(1, 0, 0.2, 0),
+        Position = UDim2.new(0, 0, 0.85, 0),
+        BackgroundTransparency = 1,
+        TextColor3 = CFG.TextColor,
+        Text = ".gg/flexed",
+        Font = Enum.Font.Gotham,
+        TextSize = 10,
+        ZIndex = 21
+    })
+})
+
+local function updateCamlockButton()
+    local button = CamlockFrame:FindFirstChild("Button")
+    if button then
+        if DaHoodSettings.CamlockEnabled then
+            button.BackgroundColor3 = Color3.fromRGB(80, 160, 80)
+            button.Text = "ON"
+        else
+            button.BackgroundColor3 = Color3.fromRGB(160, 80, 80)
+            button.Text = "OFF"
         end
-        enemy = nil
+    end
+end
+
+local function updateAutoShootButton()
+    local button = AutoShootFrame:FindFirstChild("Button")
+    if button then
+        if DaHoodSettings.AutoShoot then
+            button.BackgroundColor3 = Color3.fromRGB(80, 160, 80)
+            button.Text = "ON"
+        else
+            button.BackgroundColor3 = Color3.fromRGB(160, 80, 80)
+            button.Text = "OFF"
+        end
+    end
+end
+
+local function updateAimlockButton()
+    local button = AimlockFrame:FindFirstChild("Button")
+    if button then
+        if Aimlock.Enabled then
+            button.BackgroundColor3 = Color3.fromRGB(80, 160, 80)
+            button.Text = "ON"
+        else
+            button.BackgroundColor3 = Color3.fromRGB(160, 80, 80)
+            button.Text = "OFF"
+        end
+    end
+end
+
+local function updateAutoAirButton()
+    local button = AutoAirFrame:FindFirstChild("Button")
+    if button then
+        if DaHoodSettings.AutoAir then
+            button.BackgroundColor3 = Color3.fromRGB(80, 160, 80)
+            button.Text = "ON"
+        else
+            button.BackgroundColor3 = Color3.fromRGB(160, 80, 80)
+            button.Text = "OFF"
+        end
+    end
+end
+
+local function toggleAimlock(state)
+    if state == nil then
+        Aimlock.Enabled = not Aimlock.Enabled
+    else
+        Aimlock.Enabled = state
+    end
+    
+    if Aimlock.Enabled then
+        Aimlock.IsLocked = false
+        Aimlock.CurrentTarget = nil
+        Aimlock.HasSearchedForTarget = false
+        local newTarget = getNearestPlayer()
+        if newTarget and isTargetValid(newTarget) then
+            Aimlock.CurrentTarget = newTarget
+            Aimlock.IsLocked = true
+            Aimlock.HasSearchedForTarget = true
+        end
+        updateAimlockButton()
+    else
+        Aimlock.CurrentTarget = nil
+        Aimlock.IsLocked = false
+        Aimlock.HasSearchedForTarget = false
+        updateAimlockButton()
+    end
+end
+
+CamlockFrame.Button.MouseButton1Click:Connect(function()
+    DaHoodSettings.CamlockEnabled = not DaHoodSettings.CamlockEnabled
+    if DaHoodSettings.CamlockEnabled then
+        Aiming.CurrentTarget = FindNearestEnemy()
+        Aiming.HasSearchedForTarget = true
+    else
+        Aiming.CurrentTarget = nil
+        Aiming.HasSearchedForTarget = false
+    end
+    updateCamlockButton()
+end)
+
+AutoShootFrame.Button.MouseButton1Click:Connect(function()
+    DaHoodSettings.AutoShoot = not DaHoodSettings.AutoShoot
+    updateAutoShootButton()
+end)
+
+AimlockFrame.Button.MouseButton1Click:Connect(function()
+    toggleAimlock()
+end)
+
+AutoAirFrame.Button.MouseButton1Click:Connect(function()
+    DaHoodSettings.AutoAir = not DaHoodSettings.AutoAir
+    if not DaHoodSettings.AutoAir then
+        if IsAutoAirActive then IsAutoAirActive = false end
+        if IsCamlockAutoAirActive then IsCamlockAutoAirActive = false end
+        toolActivated = false
+    end
+    updateAutoAirButton()
+end)
+
+local draggingCamlock, draggingAutoShoot, draggingAimlock, draggingAutoAir
+local dragInput, dragStart, startPos
+
+local function updateCamlockDrag(input)
+    local delta = input.Position - dragStart
+    CamlockFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+local function updateAutoShootDrag(input)
+    local delta = input.Position - dragStart
+    AutoShootFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+local function updateAimlockDrag(input)
+    local delta = input.Position - dragStart
+    AimlockFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+local function updateAutoAirDrag(input)
+    local delta = input.Position - dragStart
+    AutoAirFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+CamlockFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingCamlock = true
+        dragStart = input.Position
+        startPos = CamlockFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                draggingCamlock = false
+            end
+        end)
     end
 end)
 
-local autoAirGui = Instance.new("ScreenGui")
-autoAirGui.Name = "AutoAirGui"
+CamlockFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
 
-local autoAirFrame = Instance.new("Frame")
-autoAirFrame.Parent = autoAirGui
-autoAirFrame.BackgroundColor3 = Color3.new(0, 0, 0)
-autoAirFrame.BackgroundTransparency = 0.35
-autoAirFrame.Position = UDim2.new(0.0, 0, 0, 50)
-autoAirFrame.Size = UDim2.new(0.1, 0, 0.2, 0)
-autoAirFrame.Active = true
-autoAirFrame.Draggable = true
+AutoShootFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingAutoShoot = true
+        dragStart = input.Position
+        startPos = AutoShootFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                draggingAutoShoot = false
+            end
+        end)
+    end
+end)
 
-local cornerAutoAir = Instance.new("UICorner")
-cornerAutoAir.CornerRadius = UDim.new(0, 10)
-cornerAutoAir.Parent = autoAirFrame
+AutoShootFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
 
-local outlineAutoAir = Instance.new("UIStroke")
-outlineAutoAir.Parent = autoAirFrame
-outlineAutoAir.Color = Color3.fromRGB(255, 255, 255)
-outlineAutoAir.Thickness = 2
+AimlockFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingAimlock = true
+        dragStart = input.Position
+        startPos = AimlockFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                draggingAimlock = false
+            end
+        end)
+    end
+end)
 
-local autoAirButton = Instance.new("TextButton")
-autoAirButton.Parent = autoAirFrame
-autoAirButton.BackgroundTransparency = 1
-autoAirButton.Size = UDim2.new(0, 70, 0, 44)
-autoAirButton.Position = UDim2.new(0.5, -35, 0.5, -22)
-autoAirButton.Font = Enum.Font.Gotham
-autoAirButton.Text = "Toggle Auto Air"
-autoAirButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-autoAirButton.TextScaled = true
-autoAirButton.TextWrapped = true
+AimlockFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+AutoAirFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingAutoAir = true
+        dragStart = input.Position
+        startPos = AutoAirFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                draggingAutoAir = false
+            end
+        end)
+    end
+end)
+
+AutoAirFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if input == dragInput and draggingCamlock then
+        updateCamlockDrag(input)
+    elseif input == dragInput and draggingAutoShoot then
+        updateAutoShootDrag(input)
+    elseif input == dragInput and draggingAimlock then
+        updateAimlockDrag(input)
+    elseif input == dragInput and draggingAutoAir then
+        updateAutoAirDrag(input)
+    end
+end)
+
+local function updateFOVValue(value)
+    DaHoodSettings.FOV = math.clamp(value, 50, 200)
+    FOVCircle.Size = UDim2.new(0, DaHoodSettings.FOV * 2, 0, DaHoodSettings.FOV * 2)
+end
+
+local function updateFOVCircle()
+    FOVCircle.Visible = DaHoodSettings.SilentAim
+end
 
 local function IsPlayerAirborne(humanoid)
+    if not humanoid then return false end
     local rootPart = humanoid.Parent:FindFirstChild("HumanoidRootPart")
     if rootPart then
         local velocityY = rootPart.Velocity.Y
@@ -225,160 +1823,471 @@ local function IsPlayerAirborne(humanoid)
             Enum.HumanoidStateType.Climbing,
             Enum.HumanoidStateType.Swimming
         }
-        local isAirborne = math.abs(velocityY) > 2
         local isGrounded = table.find(groundedStates, humanoid:GetState()) ~= nil
-        return isAirborne and not isGrounded
+        
+        local isFalling = velocityY < DaHoodSettings.FallCheck
+        local isJumping = velocityY > DaHoodSettings.JumpCheck
+        
+        return (isJumping or isFalling) and not isGrounded
     end
     return false
 end
 
-local AutoAirState = false
-local toolActivated = false
-
 local function AutoAir()
-    if AutoAirState and CamlockState and enemy and not noTargetFound then
-        local enemyHumanoid = enemy.Parent and enemy.Parent:FindFirstChild("Humanoid")
-        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
-        if enemyHumanoid and tool then
-            if IsPlayerAirborne(enemyHumanoid) and not toolActivated then
-                wait(0.1)
-                tool:Activate()
-                toolActivated = true
-            elseif not IsPlayerAirborne(enemyHumanoid) then
-                toolActivated = false
+    if DaHoodSettings.AutoAir then
+        if DaHoodSettings.CamlockEnabled and Aiming.CurrentTarget then
+            local targetCharacter = Aiming.CurrentTarget.Parent
+            local enemyHumanoid = targetCharacter and targetCharacter:FindFirstChild("Humanoid")
+            local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+            
+            if enemyHumanoid and tool then
+                if IsPlayerAirborne(enemyHumanoid) and not toolActivated then
+                    task.wait(0.1)
+                    pcall(function()
+                        tool:Activate()
+                    end)
+                    toolActivated = true
+                elseif not IsPlayerAirborne(enemyHumanoid) then
+                    toolActivated = false
+                end
+            end
+        elseif Aimlock.Enabled and Aimlock.IsLocked and Aimlock.CurrentTarget then
+            local targetCharacter = Aimlock.CurrentTarget.Parent
+            local enemyHumanoid = targetCharacter and targetCharacter:FindFirstChild("Humanoid")
+            local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+            
+            if enemyHumanoid and tool then
+                if IsPlayerAirborne(enemyHumanoid) and not toolActivated then
+                    task.wait(0.1)
+                    pcall(function()
+                        tool:Activate()
+                    end)
+                    toolActivated = true
+                elseif not IsPlayerAirborne(enemyHumanoid) then
+                    toolActivated = false
+                end
             end
         end
     end
 end
 
-RunService.RenderStepped:Connect(AutoAir)
-
-autoAirButton.MouseButton1Click:Connect(function()
-    AutoAirState = not AutoAirState
-    if AutoAirState then
-        autoAirButton.Text = "Auto Air ON"
-    else
-        autoAirButton.Text = "Auto Air OFF"
-    end
-end)
-
-autoAirGui.Parent = game.CoreGui
-
-local cornerUI = Instance.new("UICorner")
-cornerUI.CornerRadius = UDim.new(0, 5)
-cornerUI.Parent = TextButton
-
-getgenv().HitPart = "HumanoidRootPart"
-getgenv().Prediction_SilentAim = 0.1201
-getgenv().SilentAimEnabled = false -- Default to disabled
-getgenv().SilentAimShowFOV = false -- Default to showing FOV
-getgenv().SilentAimFOVSize = 90
-getgenv().SilentAimFOVTransparency = 1
-getgenv().SilentAimFOVThickness = 2.0
-getgenv().SilentAimFOVColor = Color3.new(255, 0, 0)
-
-local SilentAimFOVCircle = Drawing.new("Circle")
-SilentAimFOVCircle.Color = getgenv().SilentAimFOVColor
-SilentAimFOVCircle.Visible = getgenv().SilentAimShowFOV
-SilentAimFOVCircle.Filled = false
-SilentAimFOVCircle.Radius = getgenv().SilentAimFOVSize
-SilentAimFOVCircle.Transparency = getgenv().SilentAimFOVTransparency
-SilentAimFOVCircle.Thickness = getgenv().SilentAimFOVThickness
-
-local function updateFOVCirclePosition()
-    local centerScreenPosition = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y / 2)
-    SilentAimFOVCircle.Position = centerScreenPosition
-end
-
-local function getClosestPlayerToCenter()
-    local centerScreenPosition = Vector2.new(workspace.CurrentCamera.ViewportSize.X / 2, workspace.CurrentCamera.ViewportSize.Y / 2)
-    local closestPlayer
-    local closestDistance = math.huge
-    local localPlayer = game.Players.LocalPlayer
-    local camera = workspace.CurrentCamera
+function getNearestPointOfView()
+    local nearestPart = nil
+    local nearestDistance = DaHoodSettings.FOV
+    local screenCenter = Vector2.new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y / 2)
     
-    for _, player in ipairs(game.Players:GetPlayers()) do
-        if player ~= localPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            local playerRootPart = player.Character.HumanoidRootPart
-            local screenPosition, onScreen = camera:WorldToViewportPoint(playerRootPart.Position)
-            
-            if onScreen then
-                local KOd = player.Character:FindFirstChild("BodyEffects") and player.Character.BodyEffects["K.O"].Value
-                local Grabbed = player.Character:FindFirstChild("GRABBING_CONSTRAINT") ~= nil
-                
-                if not KOd and not Grabbed then
-                    -- Raycast to check visibility
-                    local ray = Ray.new(camera.CFrame.Position, (playerRootPart.Position - camera.CFrame.Position).Unit * (camera.CFrame.Position - playerRootPart.Position).Magnitude)
-                    local part, hitPosition = workspace:FindPartOnRay(ray, localPlayer.Character, false, true)
-                    
-                    -- Only target if visible (no wall in between)
-                    if part == nil or part:IsDescendantOf(player.Character) then
-                        local distance = (centerScreenPosition - Vector2.new(screenPosition.X, screenPosition.Y)).Magnitude
-                        if distance < closestDistance and distance <= SilentAimFOVCircle.Radius then
-                            closestPlayer = player
-                            closestDistance = distance
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local character = player.Character
+            if character and isCharacterAlive(character) and isLocalPlayerAlive() then
+                local targetPart = getTargetPart(character)
+                if targetPart then
+                    local screenPoint, onScreen = CurrentCamera:WorldToViewportPoint(targetPart.Position)
+                    if onScreen then
+                        local screenPos = Vector2.new(screenPoint.X, screenPoint.Y)
+                        local distance = (screenPos - screenCenter).Magnitude
+                        if distance <= DaHoodSettings.FOV and distance < nearestDistance then
+                            if isVisible(targetPart) then
+                                nearestDistance = distance
+                                nearestPart = targetPart
+                            end
                         end
                     end
                 end
             end
         end
     end
-    return closestPlayer
-end
-
-local SilentAimTarget = nil
-
-game:GetService("RunService").RenderStepped:Connect(function()
-    SilentAimTarget = getClosestPlayerToCenter()
-end)
-
-game:GetService("RunService").RenderStepped:Connect(function()
-    updateFOVCirclePosition()
-end)
-
-local mt = getrawmetatable(game)
-local old = mt.__namecall
-setreadonly(mt, false)
-
-mt.__namecall = newcclosure(function(...)
-    local args = {...}
-    if getgenv().SilentAimEnabled and SilentAimTarget ~= nil and SilentAimTarget.Character and getnamecallmethod() == "FireServer" and args[2] == "UpdateMousePos" then
-        args[3] = SilentAimTarget.Character[getgenv().HitPart].Position + (SilentAimTarget.Character[getgenv().HitPart].Velocity * getgenv().Prediction_SilentAim)
-        return old(unpack(args))
-    end
-    return old(...)
-end)
-
-setreadonly(mt, true)
-
-local mt = getrawmetatable(game)
-local old = mt.__namecall
-setreadonly(mt, false)
-
-mt.__namecall = newcclosure(function(...)
-    local args = {...}
-    if getgenv().SilentAimEnabled and SilentAimTarget ~= nil and SilentAimTarget.Character and getnamecallmethod() == "FireServer" then
-        if args[2] == "UpdateMousePos" or args[2] == "MOUSE" or args[2] == "UpdateMousePosI" or args[2] == "MousePosUpdate" then
-            args[3] = SilentAimTarget.Character[getgenv().HitPart].Position + (SilentAimTarget.Character[getgenv().HitPart].Velocity * getgenv().Prediction_SilentAim)
-            return old(unpack(args))
+    
+    if DaHoodSettings.TargetNPCs then
+        local npcBots = findNPCBots()
+        for _, npc in pairs(npcBots) do
+            if isCharacterAlive(npc) then
+                local targetPart = getTargetPart(npc)
+                if targetPart then
+                    local screenPoint, onScreen = CurrentCamera:WorldToViewportPoint(targetPart.Position)
+                    if onScreen then
+                        local screenPos = Vector2.new(screenPoint.X, screenPoint.Y)
+                        local distance = (screenPos - screenCenter).Magnitude
+                        if distance <= DaHoodSettings.FOV and distance < nearestDistance then
+                            if isVisible(targetPart) then
+                                nearestDistance = distance
+                                nearestPart = targetPart
+                            end
+                        end
+                    end
+                end
+            end
         end
     end
-    return old(...)
-end)
+    
+    return nearestPart
+end
 
-setreadonly(mt, true)
+local function findAndLockTarget()
+    if not Aimlock.Enabled then return false end
+    if not Aimlock.HasSearchedForTarget then
+        local newTarget = getNearestPlayer()
+        if newTarget and isTargetValid(newTarget) then
+            Aimlock.CurrentTarget = newTarget
+            Aimlock.IsLocked = true
+            Aimlock.HasSearchedForTarget = true
+            return true
+        else
+            Aimlock.HasSearchedForTarget = true
+            return false
+        end
+    end
+    return Aimlock.IsLocked
+end
 
--- expand hitbox by xr/pamcles/airhitpart
-local function randomizeHitbox(player)
-    local character = player.Character
-    if character and character:FindFirstChild("HumanoidRootPart") then
-        local HitBoxGram = character.HumanoidRootPart
-        local randomSize = Vector3.new(math.random(7, 30), math.random(7, 30), math.random(7, 30))
-        HitBoxGram.Size = randomSize
-        HitBoxGram.Massless = true
-        HitBoxGram.CanCollide = false
-        HitBoxGram.Anchored = true
-        wait(0.1)
-        hrp.Anchored = false
+local function validateLockedTarget()
+    if not Aimlock.IsLocked or not Aimlock.CurrentTarget then return false end
+    if not isTargetValid(Aimlock.CurrentTarget) then
+        Aimlock.CurrentTarget = nil
+        Aimlock.IsLocked = false
+        return false
+    end
+    return true
+end
+
+local function updateAimlock()
+    if not Aimlock.Enabled then
+        Aimlock.CurrentTarget = nil
+        Aimlock.IsLocked = false
+        Aimlock.HasSearchedForTarget = false
+        return
+    end
+    if not isLocalPlayerAlive() then
+        Aimlock.CurrentTarget = nil
+        Aimlock.IsLocked = false
+        Aimlock.HasSearchedForTarget = false
+        return
+    end
+    if Aimlock.IsLocked then
+        if not validateLockedTarget() then
+            Aimlock.CurrentTarget = nil
+            Aimlock.IsLocked = false
+        end
+    else
+        if not Aimlock.HasSearchedForTarget then
+            findAndLockTarget()
+        end
     end
 end
+
+local function checkAutoShoot()
+    if not DaHoodSettings.AutoShoot then return end
+    local character = LocalPlayer.Character
+    local currentTool = character and character:FindFirstChildOfClass("Tool")
+    if currentTool then
+        pcall( function() currentTool:Activate() end )
+    end
+end
+
+local function isHittablePlayer(part)
+    local model = part:FindFirstAncestorOfClass("Model")
+    if not model or model == LocalPlayer.Character then return false end
+    local humanoid = model:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return false end
+    local bodyEffects = model:FindFirstChild("BodyEffects")
+    local isKnocked = bodyEffects and bodyEffects:FindFirstChild("K.O") and bodyEffects["K.O"].Value
+    local isGrabbed = model:FindFirstChild("GRABBING_CONSTRAINT") ~= nil
+    if isKnocked or isGrabbed then return false end
+    if model:FindFirstChildOfClass("ForceField") then return false end
+    return true
+end
+
+local function triggerBotLoop()
+    if not DaHoodSettings.TriggerBotEnabled then return end
+    local now = tick()
+    if now - TriggerBotLastActivation < TriggerBotActivationDelay then return end
+    local character = LocalPlayer.Character
+    if not character then return end
+    local tool = character:FindFirstChildOfClass("Tool")
+    if not tool then return end
+    
+    local toolName = tool.Name:lower()
+    local isBlacklisted = false
+    for _, blacklistedTool in ipairs(BlacklistedTools) do
+        if toolName:find(blacklistedTool:lower()) then
+            isBlacklisted = true
+            break
+        end
+    end
+    if isBlacklisted then return end
+    
+    local rayOrigin = CurrentCamera.CFrame.Position
+    local rayDirection = CurrentCamera.CFrame.LookVector * 1000
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {character}
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    local result = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+    
+    if result and result.Instance and isHittablePlayer(result.Instance) then
+        local hitModel = result.Instance:FindFirstAncestorOfClass("Model")
+        local hitPlayer = hitModel and Players:GetPlayerFromCharacter(hitModel)
+        if hitPlayer and hitPlayer ~= LocalPlayer then
+            local targetHRP = hitPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if targetHRP then
+                local predictedPos = targetHRP.Position + targetHRP.Velocity * DaHoodSettings.TriggerBotPrediction
+                local direction = (predictedPos - rayOrigin).Unit * 1000
+                local predictionResult = Workspace:Raycast(rayOrigin, direction, raycastParams)
+                if predictionResult and isHittablePlayer(predictionResult.Instance) then
+                    pcall( function() tool:Activate() end )
+                    TriggerBotLastActivation = now
+                end
+            end
+        end
+    end
+end
+
+local function camlockLoop()
+    if not DaHoodSettings.CamlockEnabled then
+        Aiming.CurrentTarget = nil
+        Aiming.HasSearchedForTarget = false
+        return
+    end
+    if Aiming.CurrentTarget and isTargetValid(Aiming.CurrentTarget) then
+        local predictedPosition = getPredictedPosition(Aiming.CurrentTarget, "camlock")
+        if not predictedPosition then
+            Aiming.CurrentTarget = nil
+            return
+        end
+        local camera = Workspace.CurrentCamera
+        local lookVector = (predictedPosition - camera.CFrame.Position).Unit
+        camera.CFrame = CFrame.new(camera.CFrame.Position, camera.CFrame.Position + lookVector)
+    else
+        Aiming.CurrentTarget = FindNearestEnemy()
+    end
+end
+
+local hookedInstances = {}
+local originalIndex
+local function safeHookFunction()
+    if originalIndex then return originalIndex end
+    originalIndex = hookmetamethod( game, "__index", function(t, k)
+        if t:IsA("Mouse") and (k == "Hit" or k == "Target") then
+            local mouseInstance = t
+            if DaHoodSettings.SilentAim then
+                local target = getNearestPointOfView()
+                if target then
+                    local predictedPosition = getPredictedPosition(target, "silent")
+                    if predictedPosition then
+                        if k == "Hit" then
+                            return CFrame.new(predictedPosition)
+                        elseif k == "Target" then
+                            return target
+                        end
+                    end
+                end
+            elseif Aimlock.Enabled and Aimlock.IsLocked then
+                if Aimlock.CurrentTarget and not isTargetValid(Aimlock.CurrentTarget) then
+                    Aimlock.CurrentTarget = nil
+                    Aimlock.IsLocked = false
+                end
+                if Aimlock.CurrentTarget then
+                    local predictedPosition = getPredictedPosition(Aimlock.CurrentTarget)
+                    if predictedPosition then
+                        if k == "Hit" then
+                            return CFrame.new(predictedPosition)
+                        elseif k == "Target" then
+                            return Aimlock.CurrentTarget
+                        end
+                    end
+                end
+            end
+        end
+        return originalIndex(t, k)
+    end)
+    return originalIndex
+end
+
+safeHookFunction()
+
+Players.PlayerRemoving:Connect( function(player)
+    if Aimlock.CurrentTarget and Aimlock.CurrentTarget.Parent == player.Character then
+        Aimlock.CurrentTarget = nil
+        Aimlock.IsLocked = false
+        Aimlock.HasSearchedForTarget = true
+    end
+end)
+
+local Legit = Library:Tab("Legit", "98159911363596")
+local Misc = Library:Tab("Misc", "11888734334")
+local Cfg = Library:Tab("Cfg", "12403097620")
+
+local AimGroup = Legit:Group("Aimbot")
+
+AimGroup:Toggle({Name = "Camlock", Tooltip = "Enable camera lock functionality", Callback = function(v)
+    DaHoodSettings.CamlockEnabled = v
+    CamlockFrame.Visible = v
+    if v then
+        Aiming.CurrentTarget = FindNearestEnemy()
+        Aiming.HasSearchedForTarget = true
+    else
+        Aiming.CurrentTarget = nil
+        Aiming.HasSearchedForTarget = false
+    end
+    updateCamlockButton()
+end})
+
+AimGroup:Toggle({Name = "Silent Aim", Tooltip = "Enable silent aim functionality", Callback = function(v)
+    DaHoodSettings.SilentAim = v
+    getgenv().SilentAimEnabled = v
+    updateFOVCircle()
+end})
+
+AimGroup:Dropdown({Name = "Target Part", Options = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "LeftHand", "RightHand", "LeftFoot", "RightFoot"}, Default = "Head", Callback = function(v)
+    DaHoodSettings.TargetPart = v
+    getgenv().HitPart = v
+    if DaHoodSettings.CamlockEnabled and Aiming.CurrentTarget then
+        Aiming.CurrentTarget = FindNearestEnemy()
+    end
+end})
+
+AimGroup:Slider({Name = "FOV Radius", Min = 50, Max = 200, Default = 100, Unit = "px", Callback = function(v)
+    updateFOVValue(v)
+    getgenv().SilentAimFOVSize = v
+end})
+
+local AimlockGroup = Legit:Group("Aimlock")
+
+AimlockGroup:Toggle({Name = "Aimlock", Tooltip = "Lock onto one target until toggled off", Callback = function(v)
+    toggleAimlock(v)
+    AimlockFrame.Visible = v
+end})
+
+AimlockGroup:Dropdown({Name = "Aimlock Part", Options = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "LeftHand", "RightHand", "LeftFoot", "RightFoot"}, Default = "Head", Callback = function(v)
+    DaHoodSettings.TargetPart = v
+    if Aimlock.Enabled and Aimlock.CurrentTarget then
+        Aimlock.IsLocked = false
+        Aimlock.CurrentTarget = nil
+        Aimlock.HasSearchedForTarget = false
+        findAndLockTarget()
+    end
+end})
+
+AimlockGroup:Toggle({Name = "Show Chams", Tooltip = "Show chams on aimlock target", Callback = function(v)
+    DaHoodSettings.ShowChams = v
+    -- Visuals functionality removed
+end})
+
+AimlockGroup:Toggle({Name = "Show Tracer", Tooltip = "Show tracer line to aimlock target", Callback = function(v)
+    DaHoodSettings.ShowTracer = v
+    -- Visuals functionality removed
+end})
+
+AimlockGroup:Toggle({Name = "Show Name ESP", Tooltip = "Show target's name above head", Callback = function(v)
+    DaHoodSettings.ShowNameESP = v
+    -- Visuals functionality removed
+end})
+
+local TriggerGroup = Legit:Group("TriggerBot")
+
+TriggerGroup:Toggle({Name = "TriggerBot", Tooltip = "Automatically shoot when crosshair is on target", Callback = function(v)
+    DaHoodSettings.TriggerBotEnabled = v
+end})
+
+TriggerGroup:Slider({Name = "Prediction", Min = 0.01, Max = 0.09, Default = 0.09, Unit = "", Callback = function(v)
+    DaHoodSettings.TriggerBotPrediction = v
+end})
+
+local MiscGroup = Misc:Group("Misc Features")
+
+MiscGroup:Toggle({Name = "Auto Air", Tooltip = "Auto shoot when target is in the air", Callback = function(v)
+    DaHoodSettings.AutoAir = v
+    AutoAirFrame.Visible = v
+    if not v then
+        if IsAutoAirActive then IsAutoAirActive = false end
+        if IsCamlockAutoAirActive then IsCamlockAutoAirActive = false end
+        toolActivated = false
+    end
+    updateAutoAirButton()
+end})
+
+MiscGroup:Toggle({Name = "Auto Shoot", Tooltip = "Continuously activate tool when enabled", Callback = function(v)
+    DaHoodSettings.AutoShoot = v
+    AutoShootFrame.Visible = v
+    updateAutoShootButton()
+end})
+
+MiscGroup:Toggle({Name = "Wall Check", Tooltip = "Only target visible players", Callback = function(v)
+    DaHoodSettings.WallCheck = v
+end})
+
+MiscGroup:Toggle({Name = "Target NPCs", Tooltip = "Enable targeting of NPC bots", Callback = function(v)
+    DaHoodSettings.TargetNPCs = v
+    if DaHoodSettings.CamlockEnabled and Aiming.CurrentTarget then
+        Aiming.CurrentTarget = FindNearestEnemy()
+    end
+    if Aimlock.Enabled and Aimlock.CurrentTarget then
+        Aimlock.IsLocked = false
+        Aimlock.CurrentTarget = nil
+        Aimlock.HasSearchedForTarget = false
+        findAndLockTarget()
+    end
+end})
+
+local ConfigGroup = Cfg:Group("Configuration")
+
+ConfigGroup:Keybind({Name = "Menu Key", Default = Enum.KeyCode.RightShift, Callback = function(k)
+    Library.MenuKey = k
+end})
+
+ConfigGroup:Button({Name = "Unload", Variant = "Danger", Callback = function()
+    Library.Unloaded = true
+    ScreenGui:Destroy()
+end})
+
+updateFOVValue(100)
+updateFOVCircle()
+
+RunService.RenderStepped:Connect(function()
+    updateAimlock()
+    AutoAir()
+    triggerBotLoop()
+    camlockLoop()
+end)
+
+RunService.RenderStepped:Connect(function()
+    local currentTime = tick()
+    if currentTime - LastAutoShootCheck >= AutoShootCooldown then
+        checkAutoShoot()
+        LastAutoShootCheck = currentTime
+    end
+end)
+
+CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+    if DaHoodSettings.SilentAim then
+        updateFOVCircle()
+    end
+end)
+
+local MobileToggle = Create("ImageButton", {
+    Parent = ScreenGui,
+    Size = UDim2.new(0, 40, 0, 40),
+    Position = UDim2.new(0.5, 0, 0, 10),
+    AnchorPoint = Vector2.new(0.5, 0),
+    BackgroundColor3 = CFG.MainColor,
+    Image = "rbxassetid://3926305904",
+    ImageColor3 = CFG.AccentColor,
+    AutoButtonColor = false
+}, {
+    Create("UICorner", {CornerRadius = UDim.new(1, 0)}),
+    Create("UIStroke", {Color = CFG.AccentColor, Thickness = 2})
+})
+
+local Visible = true
+MobileToggle.MouseButton1Click:Connect(function()
+    Visible = not Visible
+    MainFrame.Visible = Visible
+end)
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if not gpe and input.KeyCode == Library.MenuKey then
+        Visible = not Visible
+        MainFrame.Visible = Visible
+    end
+end)
+
+Library:Notify("Flexed Loaded Successfully", "success")
